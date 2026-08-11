@@ -12,81 +12,81 @@
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
         <div>
-          <div class="brand">REPO CANVAS</div>
-          <div class="brand-subtitle">owner control surface · turn-synchronous</div>
+          <div class="brand">Repo Canvas</div>
+          <div class="brand-subtitle">живая карта работы и решений</div>
         </div>
       </div>
 
       <div class="telemetry" aria-label="Canvas status">
-        <div class="telemetry-item"><span>revision</span><strong id="revisionValue">0</strong></div>
-        <div class="telemetry-item"><span>active</span><strong id="activeValue">0</strong></div>
-        <div class="telemetry-item telemetry-alert"><span>signals</span><strong id="signalValue">0</strong></div>
-        <div class="connection" id="connectionStatus"><i></i><span>connecting</span></div>
+        <div class="telemetry-item"><span>версия</span><strong id="revisionValue">0</strong></div>
+        <div class="telemetry-item"><span>в работе</span><strong id="activeValue">0</strong></div>
+        <div class="telemetry-item telemetry-alert"><span>ждут</span><strong id="signalValue">0</strong></div>
+        <div class="connection" id="connectionStatus"><i></i><span>подключение</span></div>
       </div>
     </header>
 
     <main class="workspace">
       <aside class="task-rail" aria-label="Tasks">
         <div class="rail-heading">
-          <span>WORKSTREAMS</span>
+          <span>ЗАДАЧИ</span>
           <small id="taskCount">0</small>
         </div>
         <button class="task-filter is-active" data-task="all" type="button">
           <span class="task-index">00</span>
-          <span><strong>All work</strong><small>combined map</small></span>
+          <span><strong>Все задачи</strong><small>общая карта</small></span>
         </button>
         <div id="taskList" class="task-list"></div>
 
         <div class="legend" aria-label="Node legend">
-          <div class="rail-heading"><span>STATE KEY</span></div>
-          <div><i class="legend-line existing"></i><span>Existing</span></div>
-          <div><i class="legend-line planned"></i><span>Planned</span></div>
-          <div><i class="legend-line active"></i><span>Active</span></div>
-          <div><i class="legend-line done"></i><span>Verified</span></div>
-          <div><i class="legend-line rejected"></i><span>Rejected</span></div>
+          <div class="rail-heading"><span>СОСТОЯНИЯ</span></div>
+          <div><i class="legend-line existing"></i><span>Существует</span></div>
+          <div><i class="legend-line planned"></i><span>Запланировано</span></div>
+          <div><i class="legend-line active"></i><span>В работе</span></div>
+          <div><i class="legend-line done"></i><span>Готово</span></div>
+          <div><i class="legend-line rejected"></i><span>Отклонено</span></div>
         </div>
       </aside>
 
       <section class="canvas-column">
         <div class="canvas-header">
           <div>
-            <span class="eyebrow">LIVE REPOSITORY TOPOLOGY</span>
-            <h1 id="canvasTitle">All active work</h1>
+            <span class="eyebrow">ЖИВАЯ КАРТА РЕПОЗИТОРИЯ</span>
+            <h1 id="canvasTitle">Вся работа</h1>
           </div>
           <div class="canvas-actions">
             <button id="zoomOut" class="icon-button" type="button" aria-label="Zoom out">−</button>
-            <button id="fitView" class="text-button" type="button">Fit map</button>
+            <button id="fitView" class="text-button" type="button">Показать всё</button>
             <button id="zoomIn" class="icon-button" type="button" aria-label="Zoom in">+</button>
           </div>
         </div>
 
         <div id="viewport" class="viewport" tabindex="0" aria-label="Repository canvas. Drag to pan and use the mouse wheel to zoom.">
-          <div class="coordinate horizontal">MODULE / RESPONSIBILITY</div>
-          <div class="coordinate vertical">WORKSTREAM</div>
+          <div class="coordinate horizontal">МОДУЛЬ / ЗОНА ОТВЕТСТВЕННОСТИ</div>
+          <div class="coordinate vertical">ЗАДАЧА</div>
           <div id="world" class="world">
             <div id="taskZones" class="task-zones"></div>
             <svg id="edgeLayer" class="edge-layer" aria-hidden="true"></svg>
             <div id="nodeLayer" class="node-layer"></div>
           </div>
           <div id="emptyState" class="empty-state" hidden>
-            <span>NO EVENTS YET</span>
-            <strong>Ask an agent to register its task.</strong>
+            <span>ПОКА ПУСТО</span>
+            <strong>Попросите агента зарегистрировать задачу.</strong>
             <code>node repo-canvas/scripts/canvas.mjs task …</code>
           </div>
-          <div class="viewport-hint">drag to pan · wheel to zoom · double-click to fit</div>
+          <div class="viewport-hint">тяните фон · колесо меняет масштаб · двойной клик показывает всё</div>
         </div>
       </section>
 
       <aside class="inspector" aria-label="Selected node inspector">
         <div class="inspector-topline">
-          <span>OWNER CONSOLE</span>
+          <span>УПРАВЛЕНИЕ</span>
           <time id="lastSync">—</time>
         </div>
 
         <div id="inspectorEmpty" class="inspector-empty">
           <span class="crosshair" aria-hidden="true"></span>
-          <strong>Select a module</strong>
-          <p>Inspect why it exists, then explain, correct, stop, or reject it.</p>
+          <strong>Выберите модуль</strong>
+          <p>Посмотрите, зачем он нужен, а затем поясните, скорректируйте или остановите работу.</p>
         </div>
 
         <div id="inspectorContent" class="inspector-content" hidden>
@@ -101,30 +101,30 @@
           </dl>
 
           <label class="note-field" for="ownerNote">
-            <span>Owner note</span>
+            <span>Комментарий владельца</span>
             <textarea id="ownerNote" rows="4" placeholder="Что изменить или почему этот узел не нужен?"></textarea>
           </label>
 
           <div class="directive-grid">
-            <button type="button" data-action="explain">Explain</button>
-            <button type="button" data-action="correct">Correct</button>
-            <button type="button" data-action="stop">Stop</button>
-            <button type="button" data-action="reject" class="danger">Reject plan</button>
+            <button type="button" data-action="explain">Пояснить</button>
+            <button type="button" data-action="correct">Скорректировать</button>
+            <button type="button" data-action="stop">Остановить</button>
+            <button id="destructiveAction" type="button" data-action="reject" class="danger">Отклонить план</button>
           </div>
-          <p class="directive-note">The action becomes a pending owner directive. Agents consume it at their next checkpoint.</p>
+          <p class="directive-note">Команда появится у агента на ближайшей контрольной точке.</p>
         </div>
 
         <div class="pending-block">
-          <div class="rail-heading"><span>PENDING SIGNALS</span><small id="pendingCount">0</small></div>
-          <div id="pendingList" class="pending-list"><span class="muted-copy">No pending directives.</span></div>
+          <div class="rail-heading"><span>ЖДУТ АГЕНТА</span><small id="pendingCount">0</small></div>
+          <div id="pendingList" class="pending-list"><span class="muted-copy">Новых директив нет.</span></div>
         </div>
       </aside>
     </main>
 
     <footer class="activity-rail">
       <div class="activity-title">
-        <span>EVENT STREAM</span>
-        <small>latest first</small>
+        <span>СОБЫТИЯ</span>
+        <small>свежие слева</small>
       </div>
       <div id="activityList" class="activity-list"></div>
     </footer>

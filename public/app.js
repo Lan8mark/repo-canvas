@@ -2,6 +2,33 @@ const NODE_WIDTH = 232;
 const NODE_HEIGHT = 106;
 const LANE_HEIGHT = 272;
 
+const STATUS_LABELS = {
+  existing: "существует",
+  planned: "запланировано",
+  active: "в работе",
+  changed: "изменено",
+  done: "готово",
+  blocked: "остановлено",
+  rejected: "отклонено",
+};
+
+const TASK_STATUS_LABELS = {
+  planned: "запланирована",
+  active: "в работе",
+  changed: "изменяется",
+  done: "готова",
+  blocked: "остановлена",
+  rejected: "отклонена",
+};
+
+const ACTION_LABELS = {
+  explain: "пояснить",
+  correct: "скорректировать",
+  stop: "остановить",
+  reject: "отклонить",
+  rollback: "откатить",
+};
+
 const elements = {
   viewport: document.querySelector("#viewport"),
   world: document.querySelector("#world"),
@@ -27,6 +54,7 @@ const elements = {
   selectedTask: document.querySelector("#selectedTask"),
   selectedUpdated: document.querySelector("#selectedUpdated"),
   ownerNote: document.querySelector("#ownerNote"),
+  destructiveAction: document.querySelector("#destructiveAction"),
   pendingCount: document.querySelector("#pendingCount"),
   pendingList: document.querySelector("#pendingList"),
   activityList: document.querySelector("#activityList"),
@@ -56,10 +84,14 @@ function escapeHtml(value) {
 function relativeTime(value) {
   if (!value) return "—";
   const delta = Math.max(0, Date.now() - new Date(value).getTime());
-  if (delta < 10_000) return "now";
-  if (delta < 60_000) return `${Math.floor(delta / 1000)}s ago`;
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (delta < 10_000) return "сейчас";
+  if (delta < 60_000) return `${Math.floor(delta / 1000)} сек назад`;
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} мин назад`;
+  return new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function statusLabel(status, labels = STATUS_LABELS) {
+  return labels[status] || status || "—";
 }
 
 function nodeKey(node) {
@@ -161,7 +193,7 @@ function renderTaskZones(tasks, nodes, positions) {
     zone.style.top = `${minY}px`;
     zone.style.width = `${maxX - minX}px`;
     zone.style.height = `${maxY - minY}px`;
-    zone.innerHTML = `<span>${escapeHtml(task.title)} · ${escapeHtml(task.status || "active")}</span>`;
+    zone.innerHTML = `<span>${escapeHtml(task.title)} · ${escapeHtml(statusLabel(task.status || "active", TASK_STATUS_LABELS))}</span>`;
     elements.taskZones.append(zone);
   }
 }
@@ -233,12 +265,12 @@ function renderNodes(nodes, positions, directives) {
     button.dataset.key = key;
     button.innerHTML = `
       <span class="node-top">
-        <span class="node-status">${escapeHtml(node.status || "planned")}</span>
+        <span class="node-status">${escapeHtml(statusLabel(node.status || "planned"))}</span>
         <span class="node-agent">${escapeHtml(node.actor || "agent")}</span>
       </span>
       <strong class="node-title">${escapeHtml(node.label || node.id)}</strong>
       <span class="node-bottom">
-        <span class="node-path">${escapeHtml(node.path || "unbound module")}</span>
+        <span class="node-path">${escapeHtml(node.path || "без привязки к файлу")}</span>
         <i class="node-signal ${hasSignal ? "has-signal" : ""}"></i>
       </span>
     `;
@@ -259,7 +291,7 @@ function renderTasks(tasks) {
   elements.taskList.innerHTML = tasks.map((task, index) => `
     <button class="task-filter ${focusedTaskId === task.id ? "is-active" : ""}" data-task="${escapeHtml(task.id)}" type="button">
       <span class="task-index">${String(index + 1).padStart(2, "0")}</span>
-      <span><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.actor || "agent")} · ${escapeHtml(task.status || "active")}</small></span>
+      <span><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.actor || "агент")} · ${escapeHtml(statusLabel(task.status || "active", TASK_STATUS_LABELS))}</small></span>
     </button>
   `).join("");
   document.querySelector('[data-task="all"]').classList.toggle("is-active", focusedTaskId === "all");
@@ -267,7 +299,7 @@ function renderTasks(tasks) {
     button.addEventListener("click", () => {
       focusedTaskId = button.dataset.task;
       const task = tasks.find((item) => item.id === focusedTaskId);
-      elements.canvasTitle.textContent = task?.title || "All active work";
+      elements.canvasTitle.textContent = task?.title || "Вся работа";
       renderAll();
       requestAnimationFrame(() => fitView(focusedTaskId));
     });
@@ -280,18 +312,17 @@ function renderInspector(nodes) {
   elements.inspectorContent.hidden = !selected;
   if (!selected) return;
 
-  elements.selectedStatus.textContent = selected.status || "planned";
-  elements.selectedActor.textContent = selected.actor || "agent";
+  elements.selectedStatus.textContent = statusLabel(selected.status || "planned");
+  elements.selectedActor.textContent = selected.actor || "агент";
   elements.selectedLabel.textContent = selected.label || selected.id;
-  elements.selectedPath.textContent = selected.path || "unbound module";
-  elements.selectedNote.textContent = selected.note || "No explanation published yet.";
+  elements.selectedPath.textContent = selected.path || "без привязки к файлу";
+  elements.selectedNote.textContent = selected.note || "Агент пока не оставил пояснение.";
   elements.selectedTask.textContent = selected.taskId;
   elements.selectedUpdated.textContent = relativeTime(selected.updatedAt);
 
-  const destructiveButton = document.querySelector('[data-action="reject"]');
   const shouldRollback = ["active", "changed", "done"].includes(selected.status);
-  destructiveButton.dataset.action = shouldRollback ? "rollback" : "reject";
-  destructiveButton.textContent = shouldRollback ? "Rollback work" : "Reject plan";
+  elements.destructiveAction.dataset.action = shouldRollback ? "rollback" : "reject";
+  elements.destructiveAction.textContent = shouldRollback ? "Откатить работу" : "Отклонить план";
 }
 
 function renderPending(directives) {
@@ -300,11 +331,11 @@ function renderPending(directives) {
   elements.pendingList.innerHTML = pending.length
     ? pending.slice(0, 6).map((directive) => `
         <div class="pending-item">
-          <strong>${escapeHtml(directive.action)} · ${escapeHtml(directive.targetId)}</strong>
-          <span>${escapeHtml(directive.note || "Waiting for agent checkpoint")}</span>
+          <strong>${escapeHtml(ACTION_LABELS[directive.action] || directive.action)} · ${escapeHtml(directive.targetId)}</strong>
+          <span>${escapeHtml(directive.note || "Ждёт ближайшей проверки агентом")}</span>
         </div>
       `).join("")
-    : '<span class="muted-copy">No pending directives.</span>';
+    : '<span class="muted-copy">Нет ожидающих команд.</span>';
 }
 
 function renderActivity(activity) {
@@ -312,7 +343,7 @@ function renderActivity(activity) {
     <article class="activity-event ${escapeHtml(item.level || "info")}">
       <time>${escapeHtml(relativeTime(item.ts))} · ${escapeHtml(item.actor || "agent")}</time>
       <p>${escapeHtml(item.message)}</p>
-      <small>${escapeHtml(item.taskId || "system")}</small>
+      <small>${escapeHtml(item.taskId || "система")}</small>
     </article>
   `).join("");
 }
@@ -347,11 +378,11 @@ async function sendDirective(action) {
   if (!selected) return;
   const note = elements.ownerNote.value.trim();
   if (action === "correct" && !note) {
-    showToast("Add an owner note before sending a correction.", true);
+    showToast("Напиши, что именно нужно скорректировать.", true);
     elements.ownerNote.focus();
     return;
   }
-  if (action === "rollback" && !window.confirm(`Rollback only changes attributable to “${selected.label}”?`)) return;
+  if (action === "rollback" && !window.confirm(`Откатить только изменения, относящиеся к «${selected.label}»?`)) return;
 
   try {
     const response = await fetch("/api/directives", {
@@ -367,9 +398,9 @@ async function sendDirective(action) {
       }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Directive failed");
+    if (!response.ok) throw new Error(result.error || "Не удалось отправить команду");
     elements.ownerNote.value = "";
-    showToast(`${action.toUpperCase()} queued as ${result.directiveId.slice(0, 18)}…`);
+    showToast(`Команда «${ACTION_LABELS[action] || action}» отправлена · ${result.directiveId.slice(0, 18)}…`);
     await pollState(true);
   } catch (error) {
     showToast(error.message, true);
@@ -382,7 +413,7 @@ async function pollState(force = false) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const next = await response.json();
     elements.connectionStatus.className = "connection is-online";
-    elements.connectionStatus.querySelector("span").textContent = "live";
+    elements.connectionStatus.querySelector("span").textContent = "онлайн";
     if (force || !snapshot || next.revision !== snapshot.revision) {
       snapshot = next;
       renderAll();
@@ -395,7 +426,7 @@ async function pollState(force = false) {
     }
   } catch (error) {
     elements.connectionStatus.className = "connection is-offline";
-    elements.connectionStatus.querySelector("span").textContent = "offline";
+    elements.connectionStatus.querySelector("span").textContent = "нет связи";
   }
 }
 
@@ -440,7 +471,7 @@ document.querySelectorAll("[data-action]").forEach((button) => {
 
 document.querySelector('[data-task="all"]').addEventListener("click", () => {
   focusedTaskId = "all";
-  elements.canvasTitle.textContent = "All active work";
+  elements.canvasTitle.textContent = "Вся работа";
   renderAll();
   requestAnimationFrame(() => fitView());
 });
