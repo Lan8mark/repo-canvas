@@ -1,6 +1,12 @@
 const NODE_WIDTH = 232;
 const NODE_HEIGHT = 106;
 const LANE_HEIGHT = 272;
+const GRID_COLUMNS = 4;
+const GRID_START_X = 120;
+const GRID_START_Y = 170;
+const GRID_STEP_X = 285;
+const GRID_STEP_Y = 164;
+const NODE_CLEARANCE = 22;
 
 const STATUS_LABELS = {
   existing: "существует",
@@ -141,6 +147,34 @@ function zoomAt(nextScale, clientX, clientY) {
   updateTransform();
 }
 
+function hasExplicitPosition(node) {
+  return Number.isFinite(Number(node.x)) && Number.isFinite(Number(node.y));
+}
+
+function gridPosition(slot, taskOffsetY) {
+  return {
+    x: GRID_START_X + (slot % GRID_COLUMNS) * GRID_STEP_X,
+    y: taskOffsetY + GRID_START_Y + Math.floor(slot / GRID_COLUMNS) * GRID_STEP_Y,
+  };
+}
+
+function overlapsOccupied(candidate, occupied) {
+  return occupied.some((position) => (
+    candidate.x < position.x + NODE_WIDTH + NODE_CLEARANCE
+    && candidate.x + NODE_WIDTH + NODE_CLEARANCE > position.x
+    && candidate.y < position.y + NODE_HEIGHT + NODE_CLEARANCE
+    && candidate.y + NODE_HEIGHT + NODE_CLEARANCE > position.y
+  ));
+}
+
+function firstFreeGridPosition(occupied, taskOffsetY, preferredSlot = 0) {
+  for (let offset = 0; offset < 400; offset += 1) {
+    const candidate = gridPosition(preferredSlot + offset, taskOffsetY);
+    if (!overlapsOccupied(candidate, occupied)) return candidate;
+  }
+  return gridPosition(occupied.length, taskOffsetY);
+}
+
 function layoutNodes(tasks, nodes) {
   const positions = new Map();
   const taskIds = tasks.map((task) => task.id);
@@ -151,13 +185,23 @@ function layoutNodes(tasks, nodes) {
 
   taskIds.forEach((taskId) => {
     const taskNodes = nodes.filter((node) => node.taskId === taskId);
-    taskNodes.forEach((node, nodeIndex) => {
-      const explicitX = Number.isFinite(Number(node.x)) ? Number(node.x) : null;
-      const explicitY = Number.isFinite(Number(node.y)) ? Number(node.y) : null;
-      positions.set(nodeKey(node), {
-        x: explicitX ?? 120 + (nodeIndex % 4) * 285,
-        y: taskOffsetY + (explicitY ?? 170 + Math.floor(nodeIndex / 4) * 164),
-      });
+    const occupied = [];
+    const orderedNodes = [...taskNodes].sort((left, right) => {
+      const explicitDifference = Number(hasExplicitPosition(right)) - Number(hasExplicitPosition(left));
+      if (explicitDifference) return explicitDifference;
+      return Number(left.order ?? Number.MAX_SAFE_INTEGER) - Number(right.order ?? Number.MAX_SAFE_INTEGER);
+    });
+
+    orderedNodes.forEach((node, nodeIndex) => {
+      let candidate = hasExplicitPosition(node)
+        ? { x: Number(node.x), y: taskOffsetY + Number(node.y) }
+        : firstFreeGridPosition(occupied, taskOffsetY, Math.max(0, Number(node.order ?? nodeIndex + 1) - 1));
+
+      if (overlapsOccupied(candidate, occupied)) {
+        candidate = firstFreeGridPosition(occupied, taskOffsetY);
+      }
+      positions.set(nodeKey(node), candidate);
+      occupied.push(candidate);
     });
     const taskPositions = taskNodes.map((node) => positions.get(nodeKey(node))).filter(Boolean);
     const taskBottom = taskPositions.length
@@ -398,7 +442,10 @@ async function sendDirective(action) {
       }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Не удалось отправить команду");
+    if (!response.ok) {
+      if (response.status === 409) await pollState(true);
+      throw new Error(result.error || "Не удалось отправить команду");
+    }
     elements.ownerNote.value = "";
     showToast(`Команда «${ACTION_LABELS[action] || action}» отправлена · ${result.directiveId.slice(0, 18)}…`);
     await pollState(true);

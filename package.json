@@ -1,11 +1,34 @@
 {
-  "name": "repo-canvas-experiment",
-  "version": "0.1.0",
-  "private": true,
+  "name": "repo-canvas",
+  "version": "0.2.0",
+  "description": "A local live repository map and owner control surface for coding agents",
   "type": "module",
+  "license": "UNLICENSED",
+  "bin": {
+    "repo-canvas": "repo-canvas/scripts/canvas.mjs"
+  },
+  "files": [
+    "public",
+    "repo-canvas",
+    "server.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.mjs",
     "canvas": "node repo-canvas/scripts/canvas.mjs",
-    "check": "node repo-canvas/scripts/canvas.mjs check"
-  }
+    "canvas:start": "node repo-canvas/scripts/canvas.mjs start",
+    "canvas:check": "node repo-canvas/scripts/canvas.mjs check",
+    "test": "node --test tests/*.test.mjs",
+    "test:package": "node tests/package-smoke.mjs"
+  },
+  "keywords": [
+    "agents",
+    "repository",
+    "visualization",
+    "codex",
+    "claude"
+  ]
 }
