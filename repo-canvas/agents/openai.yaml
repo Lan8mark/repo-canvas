@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Canvas"
+  short_description: "Keep a live owner-steerable repository map"
+  default_prompt: "Use $repo-canvas to map this task, publish checkpoints, and obey owner directives."

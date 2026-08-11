@@ -1,0 +1,11 @@
+{
+  "name": "repo-canvas-experiment",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "canvas": "node repo-canvas/scripts/canvas.mjs",
+    "check": "node repo-canvas/scripts/canvas.mjs check"
+  }
+}

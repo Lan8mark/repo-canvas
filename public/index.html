@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Repo Canvas — live agent map</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div>
+          <div class="brand">REPO CANVAS</div>
+          <div class="brand-subtitle">owner control surface · turn-synchronous</div>
+        </div>
+      </div>
+
+      <div class="telemetry" aria-label="Canvas status">
+        <div class="telemetry-item"><span>revision</span><strong id="revisionValue">0</strong></div>
+        <div class="telemetry-item"><span>active</span><strong id="activeValue">0</strong></div>
+        <div class="telemetry-item telemetry-alert"><span>signals</span><strong id="signalValue">0</strong></div>
+        <div class="connection" id="connectionStatus"><i></i><span>connecting</span></div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="task-rail" aria-label="Tasks">
+        <div class="rail-heading">
+          <span>WORKSTREAMS</span>
+          <small id="taskCount">0</small>
+        </div>
+        <button class="task-filter is-active" data-task="all" type="button">
+          <span class="task-index">00</span>
+          <span><strong>All work</strong><small>combined map</small></span>
+        </button>
+        <div id="taskList" class="task-list"></div>
+
+        <div class="legend" aria-label="Node legend">
+          <div class="rail-heading"><span>STATE KEY</span></div>
+          <div><i class="legend-line existing"></i><span>Existing</span></div>
+          <div><i class="legend-line planned"></i><span>Planned</span></div>
+          <div><i class="legend-line active"></i><span>Active</span></div>
+          <div><i class="legend-line done"></i><span>Verified</span></div>
+          <div><i class="legend-line rejected"></i><span>Rejected</span></div>
+        </div>
+      </aside>
+
+      <section class="canvas-column">
+        <div class="canvas-header">
+          <div>
+            <span class="eyebrow">LIVE REPOSITORY TOPOLOGY</span>
+            <h1 id="canvasTitle">All active work</h1>
+          </div>
+          <div class="canvas-actions">
+            <button id="zoomOut" class="icon-button" type="button" aria-label="Zoom out">−</button>
+            <button id="fitView" class="text-button" type="button">Fit map</button>
+            <button id="zoomIn" class="icon-button" type="button" aria-label="Zoom in">+</button>
+          </div>
+        </div>
+
+        <div id="viewport" class="viewport" tabindex="0" aria-label="Repository canvas. Drag to pan and use the mouse wheel to zoom.">
+          <div class="coordinate horizontal">MODULE / RESPONSIBILITY</div>
+          <div class="coordinate vertical">WORKSTREAM</div>
+          <div id="world" class="world">
+            <div id="taskZones" class="task-zones"></div>
+            <svg id="edgeLayer" class="edge-layer" aria-hidden="true"></svg>
+            <div id="nodeLayer" class="node-layer"></div>
+          </div>
+          <div id="emptyState" class="empty-state" hidden>
+            <span>NO EVENTS YET</span>
+            <strong>Ask an agent to register its task.</strong>
+            <code>node repo-canvas/scripts/canvas.mjs task …</code>
+          </div>
+          <div class="viewport-hint">drag to pan · wheel to zoom · double-click to fit</div>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Selected node inspector">
+        <div class="inspector-topline">
+          <span>OWNER CONSOLE</span>
+          <time id="lastSync">—</time>
+        </div>
+
+        <div id="inspectorEmpty" class="inspector-empty">
+          <span class="crosshair" aria-hidden="true"></span>
+          <strong>Select a module</strong>
+          <p>Inspect why it exists, then explain, correct, stop, or reject it.</p>
+        </div>
+
+        <div id="inspectorContent" class="inspector-content" hidden>
+          <div class="node-kicker"><span id="selectedStatus">planned</span><span id="selectedActor">agent</span></div>
+          <h2 id="selectedLabel">Module</h2>
+          <code id="selectedPath">path</code>
+          <p id="selectedNote"></p>
+
+          <dl class="node-meta">
+            <div><dt>workstream</dt><dd id="selectedTask">—</dd></div>
+            <div><dt>updated</dt><dd id="selectedUpdated">—</dd></div>
+          </dl>
+
+          <label class="note-field" for="ownerNote">
+            <span>Owner note</span>
+            <textarea id="ownerNote" rows="4" placeholder="Что изменить или почему этот узел не нужен?"></textarea>
+          </label>
+
+          <div class="directive-grid">
+            <button type="button" data-action="explain">Explain</button>
+            <button type="button" data-action="correct">Correct</button>
+            <button type="button" data-action="stop">Stop</button>
+            <button type="button" data-action="reject" class="danger">Reject plan</button>
+          </div>
+          <p class="directive-note">The action becomes a pending owner directive. Agents consume it at their next checkpoint.</p>
+        </div>
+
+        <div class="pending-block">
+          <div class="rail-heading"><span>PENDING SIGNALS</span><small id="pendingCount">0</small></div>
+          <div id="pendingList" class="pending-list"><span class="muted-copy">No pending directives.</span></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="activity-rail">
+      <div class="activity-title">
+        <span>EVENT STREAM</span>
+        <small>latest first</small>
+      </div>
+      <div id="activityList" class="activity-list"></div>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+.repo-canvas/
+.playwright-cli/
+output/playwright/
+node_modules/
+*.log
