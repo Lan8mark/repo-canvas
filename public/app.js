@@ -479,8 +479,11 @@ async function pollState(force = false) {
 
 elements.viewport.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || event.target.closest(".repo-node")) return;
+  event.preventDefault();
+  document.getSelection()?.removeAllRanges();
   isPanning = true;
   panOrigin = { clientX: event.clientX, clientY: event.clientY, x: transform.x, y: transform.y };
+  elements.viewport.classList.add("is-panning");
   elements.viewport.setPointerCapture(event.pointerId);
 });
 
@@ -491,10 +494,16 @@ elements.viewport.addEventListener("pointermove", (event) => {
   updateTransform();
 });
 
-elements.viewport.addEventListener("pointerup", () => {
+function endPan() {
+  if (!isPanning && !panOrigin) return;
   isPanning = false;
   panOrigin = null;
-});
+  elements.viewport.classList.remove("is-panning");
+}
+
+elements.viewport.addEventListener("pointerup", endPan);
+elements.viewport.addEventListener("pointercancel", endPan);
+elements.viewport.addEventListener("lostpointercapture", endPan);
 
 elements.viewport.addEventListener("wheel", (event) => {
   event.preventDefault();

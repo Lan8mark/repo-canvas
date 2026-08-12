@@ -407,7 +407,14 @@ button {
   outline: none;
 }
 
-.viewport:active { cursor: grabbing; }
+.viewport:active,
+.viewport.is-panning { cursor: grabbing; }
+
+.viewport.is-panning,
+.viewport.is-panning * {
+  -webkit-user-select: none;
+  user-select: none;
+}
 
 .viewport::before {
   content: "";
