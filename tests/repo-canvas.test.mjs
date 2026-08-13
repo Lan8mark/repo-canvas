@@ -270,7 +270,7 @@ test("session locators stay structured and Codex Desktop binds automatically", (
   assert.deepEqual(snapshot.work[0].session, {
     kind: "codex-app",
     id: threadId,
-    cwd: root,
+    cwd: fs.realpathSync(root),
   });
 
   assert.deepEqual(resolveSessionTarget({ kind: "codex-app", id: threadId }), {
