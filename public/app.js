@@ -739,7 +739,7 @@ function renderUpdateStatus(state) {
   if (state.status === "failed" || state.status === "available") updateApplying = false;
   else updateApplying = state.status === "applying" || updateApplying;
   clearTimeout(updateStatusTimer);
-  updateStatusTimer = setTimeout(checkUpdateStatus, updateApplying ? 700 : 60 * 60 * 1000);
+  updateStatusTimer = setTimeout(() => checkUpdateStatus(!updateApplying), updateApplying ? 700 : 60 * 60 * 1000);
 }
 
 async function checkUpdateStatus(force = false) {
@@ -810,4 +810,4 @@ if (updatedVersion) {
   localStorage.removeItem("repo-canvas.updated-version");
   setTimeout(() => showToast(`Repo Canvas обновлён до v${updatedVersion}.`), 350);
 }
-poll(true); checkArchitectStatus(); checkUpdateStatus(); setInterval(poll, 250);
+poll(true); checkArchitectStatus(); checkUpdateStatus(true); setInterval(poll, 250);
