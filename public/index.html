@@ -89,6 +89,10 @@
       </div>
     </section>
   </main>
+  <button id="updateAvailable" class="update-available" type="button" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14" /></svg>
+    <span><small>ДОСТУПНО ОБНОВЛЕНИЕ</small><strong id="updateAvailableLabel">Update</strong></span>
+  </button>
   <dialog id="renameDialog" class="rename-dialog">
     <form id="renameForm" method="dialog">
       <small>РУЧНОЕ ИМЯ</small>
@@ -103,6 +107,14 @@
       <h2>Повторно сгенерировать карту?</h2>
       <p>Architect заново прочитает репозиторий, сверит смысловые области, сущности и связи с текущей картой. Ручные названия и расположение существующих элементов сохранятся.</p>
       <div><button id="cancelRegenerate" value="cancel" type="button">Отмена</button><button id="confirmRegenerate" class="regenerate-confirm" value="confirm" type="button">Начать генерацию</button></div>
+    </form>
+  </dialog>
+  <dialog id="updateDialog" class="action-dialog update-dialog">
+    <form method="dialog">
+      <small>REPO CANVAS UPDATE</small>
+      <h2 id="updateDialogTitle">Установить обновление?</h2>
+      <p>Canvas скачает официальный релиз, проверит SHA-256, установит его в локальную служебную папку и сам перезапустится. Карта проекта не изменится.</p>
+      <div><button id="cancelUpdate" value="cancel" type="button">Отмена</button><button id="confirmUpdate" class="update-confirm" value="confirm" type="button">Обновить и перезапустить</button></div>
     </form>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

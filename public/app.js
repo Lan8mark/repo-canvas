@@ -15,6 +15,8 @@ const elements = {
   renameInput: $("#renameInput"), renameCancel: $("#renameCancel"),
   refreshCanvas: $("#refreshCanvas"), regenerateMap: $("#regenerateMap"), regenerateLabel: $("#regenerateLabel"),
   regenerateDialog: $("#regenerateDialog"), cancelRegenerate: $("#cancelRegenerate"), confirmRegenerate: $("#confirmRegenerate"),
+  updateAvailable: $("#updateAvailable"), updateAvailableLabel: $("#updateAvailableLabel"),
+  updateDialog: $("#updateDialog"), updateDialogTitle: $("#updateDialogTitle"), cancelUpdate: $("#cancelUpdate"), confirmUpdate: $("#confirmUpdate"),
 };
 
 const ENTITY_W = 244;
@@ -47,6 +49,10 @@ let suppressEntityClickUntil = 0;
 let accessBlocked = false;
 let architectStatusTimer = null;
 let architectWasRunning = false;
+let updateStatusTimer = null;
+let updateTargetVersion = null;
+let updateApplying = false;
+let updateFailureShown = "";
 const collapsedAreas = new Set();
 const API_TOKEN_STORAGE_KEY = "repo-canvas.api-token";
 
@@ -710,6 +716,59 @@ async function regenerateMap() {
   finally { elements.confirmRegenerate.disabled = false; }
 }
 
+function renderUpdateStatus(state) {
+  const available = state.status === "available" || state.status === "failed" || state.status === "applying";
+  updateTargetVersion = state.availableVersion || updateTargetVersion;
+  elements.updateAvailable.hidden = !available;
+  elements.updateAvailable.disabled = state.status === "applying";
+  elements.updateAvailable.classList.toggle("is-applying", state.status === "applying");
+  if (state.status === "applying") elements.updateAvailableLabel.textContent = `Устанавливается v${updateTargetVersion || "…"}`;
+  else if (state.status === "failed") elements.updateAvailableLabel.textContent = `Повторить Update v${updateTargetVersion || ""}`;
+  else if (state.status === "available") elements.updateAvailableLabel.textContent = `Update v${state.availableVersion}`;
+
+  if (state.status === "failed" && state.error && updateFailureShown !== state.error) {
+    updateFailureShown = state.error;
+    showToast(`Обновление отменено: ${state.error}`, true);
+  }
+  if (updateApplying && state.currentVersion === updateTargetVersion && state.status === "current") {
+    updateApplying = false;
+    localStorage.setItem("repo-canvas.updated-version", state.currentVersion);
+    window.location.reload();
+    return;
+  }
+  if (state.status === "failed" || state.status === "available") updateApplying = false;
+  else updateApplying = state.status === "applying" || updateApplying;
+  clearTimeout(updateStatusTimer);
+  updateStatusTimer = setTimeout(checkUpdateStatus, updateApplying ? 700 : 60 * 60 * 1000);
+}
+
+async function checkUpdateStatus(force = false) {
+  try {
+    const response = await apiFetch(`/api/update/status?${force ? "refresh=1&" : ""}t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    renderUpdateStatus(await response.json());
+  } catch {
+    clearTimeout(updateStatusTimer);
+    updateStatusTimer = setTimeout(checkUpdateStatus, updateApplying ? 700 : 60_000);
+  }
+}
+
+async function applyUpdate() {
+  elements.confirmUpdate.disabled = true;
+  try {
+    const response = await apiFetch("/api/update/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const state = await response.json();
+    if (!response.ok) throw new Error(state.error || "Не удалось запустить обновление");
+    elements.updateDialog.close();
+    updateApplying = true;
+    renderUpdateStatus(state);
+    showToast("Обновление устанавливается. Canvas перезапустится сам.");
+  } catch (error) {
+    showToast(error.message, true);
+    elements.confirmUpdate.disabled = false;
+  }
+}
+
 elements.allProject.addEventListener("click", () => selectArea("all"));
 elements.closePassport.addEventListener("click", () => { selectedEntity = null; elements.passport.hidden = true; });
 $("#fitView").addEventListener("click", () => selectArea("all"));
@@ -721,6 +780,12 @@ elements.refreshCanvas.addEventListener("click", refreshCanvas);
 elements.regenerateMap.addEventListener("click", () => elements.regenerateDialog.showModal());
 elements.cancelRegenerate.addEventListener("click", () => elements.regenerateDialog.close());
 elements.confirmRegenerate.addEventListener("click", regenerateMap);
+elements.updateAvailable.addEventListener("click", () => {
+  elements.updateDialogTitle.textContent = `Установить Repo Canvas v${updateTargetVersion || ""}?`;
+  elements.updateDialog.showModal();
+});
+elements.cancelUpdate.addEventListener("click", () => elements.updateDialog.close());
+elements.confirmUpdate.addEventListener("click", applyUpdate);
 elements.renameForm.addEventListener("submit", saveRename);
 elements.renameCancel.addEventListener("click", () => { renameTarget = null; elements.renameDialog.close(); });
 elements.renameDialog.addEventListener("cancel", () => { renameTarget = null; });
@@ -740,4 +805,9 @@ elements.world.addEventListener("pointermove", moveLayoutDrag);
 elements.world.addEventListener("pointerup", endLayoutDrag);
 elements.world.addEventListener("pointercancel", endLayoutDrag);
 window.addEventListener("resize", () => { if (snapshot?.semantic) fitView(); });
-poll(true); checkArchitectStatus(); setInterval(poll, 250);
+const updatedVersion = localStorage.getItem("repo-canvas.updated-version");
+if (updatedVersion) {
+  localStorage.removeItem("repo-canvas.updated-version");
+  setTimeout(() => showToast(`Repo Canvas обновлён до v${updatedVersion}.`), 350);
+}
+poll(true); checkArchitectStatus(); checkUpdateStatus(); setInterval(poll, 250);

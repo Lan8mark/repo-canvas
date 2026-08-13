@@ -9,16 +9,22 @@ import { runArchitect } from "./repo-canvas/scripts/architect.mjs";
 import { startObserver } from "./repo-canvas/scripts/observer.mjs";
 import { readRuntimeConfig } from "./repo-canvas/scripts/runtime-config.mjs";
 import { openSessionLocator } from "./repo-canvas/scripts/session-locator.mjs";
+import { createUpdateService } from "./repo-canvas/scripts/update-service.mjs";
 
 const host = process.env.CANVAS_HOST || "127.0.0.1";
 const port = Number(process.env.CANVAS_PORT || 4173);
 const publicDirectory = path.join(packageRoot, "public");
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const runtimeConfig = readRuntimeConfig();
-const apiToken = crypto.randomBytes(32).toString("base64url");
+const configuredApiToken = process.env.REPO_CANVAS_API_TOKEN || "";
+if (configuredApiToken && !/^[A-Za-z0-9_-]{43}$/.test(configuredApiToken)) {
+  throw new Error("REPO_CANVAS_API_TOKEN must be a 32-byte base64url token");
+}
+const apiToken = configuredApiToken || crypto.randomBytes(32).toString("base64url");
 let observerService = null;
 let architectJob = null;
 let architectState = { status: "idle", startedAt: null, finishedAt: null, result: null, error: null };
+const updateService = createUpdateService({ host, port, apiToken, shutdown });
 
 function publicArchitectState() {
   return { ...architectState, running: architectJob !== null };
@@ -303,6 +309,12 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/update/status") {
+      const force = url.searchParams.get("refresh") === "1";
+      sendJson(response, 200, await updateService.check({ force }));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/favicon.ico") {
       response.writeHead(204, { "Cache-Control": "public, max-age=86400" });
       response.end();
@@ -344,6 +356,17 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/update/apply") {
+      guardMutation(request);
+      await readJson(request);
+      try {
+        sendJson(response, 202, updateService.apply());
+      } catch (error) {
+        throw new HttpError(409, error.message);
+      }
+      return;
+    }
+
     if (request.method !== "GET" && request.method !== "HEAD") {
       sendJson(response, 405, { ok: false, error: "Method not allowed" });
       return;
@@ -371,6 +394,7 @@ server.listen(port, host, () => {
   console.log(`Repo Canvas root: ${projectRoot}`);
   console.log(`Repo Canvas listening at ${canvasUrl}`);
   openCanvasInBrowser(canvasUrl);
+  updateService.check().catch(() => {});
   if (runtimeConfig.enabled && getSnapshot().semantic) {
     observerService = startObserver({ config: runtimeConfig });
     console.log(`Repo Canvas observer: ${observerService.observer.adapters.map((item) => item.id).join(", ")} sessions for ${runtimeConfig.repoRoot}`);

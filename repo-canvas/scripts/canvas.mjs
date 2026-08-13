@@ -120,8 +120,13 @@ if (args.root === true) {
 } else {
   if (args.root) process.env.REPO_CANVAS_ROOT = path.resolve(process.cwd(), String(args.root));
 
+  const { delegateToActiveRuntime } = await import("./runtime-delegation.mjs");
+  const delegated = await delegateToActiveRuntime();
+
   try {
-    if (command === "help" || command === "--help" || command === "-h") {
+    if (delegated) {
+      // The active project-local runtime handled the command.
+    } else if (command === "help" || command === "--help" || command === "-h") {
       printHelp();
     } else if (command === "start" || command === "serve") {
       if (args.port !== undefined) process.env.CANVAS_PORT = String(args.port);

@@ -16,11 +16,11 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
    Если владелец дал ссылку на GitHub:
 
-   npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.5
+   npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.6
 
-   Если в корне проекта лежит `repo-canvas-0.8.5.tgz`:
+   Если в корне проекта лежит `repo-canvas-0.8.6.tgz`:
 
-   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.5.tgz
+   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.6.tgz
 
    Затем выполни:
 
@@ -56,6 +56,8 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
    - число областей, сущностей и связей;
    - результат `check`;
    - единственный реальный блокер, если он остался.
+
+После этой установки терминал для будущих обновлений не нужен. Когда выйдет новый проверенный релиз, внизу Canvas появится кнопка `Update`; она установит новую версию в ignored-каталог, перезапустит сервер и сохранит текущую карту.
 
 После запуска сервера Observer создаёт черновую карточку при первом событии новой работы и затем уточняет её по публичным событиям сессии. Обычным рабочим агентам Canvas-инструкции не нужны. Claude `thinking`, Kimi `think`, tool results и скрытый reasoning игнорируются. Во время наблюдения Observer не сканирует файлы проекта заново.
 

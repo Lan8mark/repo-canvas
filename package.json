@@ -1,6 +1,6 @@
 {
   "name": "repo-canvas",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "A local semantic repository map with live Codex, Claude Code and Kimi Code work",
   "type": "module",
   "license": "MIT",
@@ -35,7 +35,8 @@
     "canvas:check": "node repo-canvas/scripts/canvas.mjs check",
     "test": "node --test tests/*.test.mjs",
     "test:stress": "node tests/observer-stress.mjs && node tests/session-adapters-stress.mjs",
-    "test:package": "node tests/package-smoke.mjs"
+    "test:package": "node tests/package-smoke.mjs",
+    "test:update": "node tests/self-update-smoke.mjs"
   },
   "keywords": [
     "agents",
