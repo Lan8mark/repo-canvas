@@ -45,7 +45,7 @@ export function resolveSessionTarget(locator) {
   const commands = {
     "codex-cli": { binary: "codex", args: ["resume", id], label: "Codex CLI" },
     "claude-cli": { binary: "claude", args: ["--resume", id], label: "Claude Code" },
-    "kimi-cli": { binary: "kimi", args: ["--session", id], label: "Kimi CLI" },
+    "kimi-cli": { binary: "kimi", args: ["-r", id], label: "Kimi CLI" },
   };
   const command = commands[locator.kind];
   return {

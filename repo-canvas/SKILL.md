@@ -24,11 +24,11 @@ npm run repo-canvas:start
 ## Runtime roles
 
 - Architect: `gpt-5.6-sol`, medium reasoning by default. It reads the repository once and builds or refreshes the complete semantic map.
-- Observer: `gpt-5.4-mini`, low reasoning by default. It reads only public Codex session events scoped to this repository and sends short independent classification turns.
+- Observer: `gpt-5.4-mini`, low reasoning by default. It reads public Codex, Claude Code and Kimi Code session events scoped to this repository and sends short independent classification turns.
 
-The Observer immediately emits a provisional work satellite when a Codex turn starts. It then attaches the work to semantic entities after the first useful public agent event or a short deadline. Completion triggers one final delta.
+The Observer immediately emits a provisional work satellite when a supported agent turn starts. It then attaches the work to semantic entities after the first useful public agent event or a short deadline. Completion triggers one final delta.
 
-The observer never reads hidden reasoning and never rescans product files. A file deletion alone cannot remove a semantic entity. A completion delta may remove an entity only when the public session establishes that the concept itself was eliminated or merged away.
+The observer never reads hidden reasoning, Claude `thinking`, Kimi `think`, or tool results, and never rescans product files. A file deletion alone cannot remove a semantic entity. A completion delta may remove an entity only when the public session establishes that the concept itself was eliminated or merged away.
 
 ## Semantic objects
 
@@ -71,6 +71,6 @@ Before handoff:
 1. `repo-canvas check` is green;
 2. one loopback server is running;
 3. the actual browser canvas is visually inspected;
-4. a fresh Codex turn in this repository creates a provisional satellite promptly and becomes classified;
+4. a fresh turn from each locally available supported agent in this repository creates a provisional satellite promptly and becomes classified;
 5. unrelated repository sessions do not appear;
 6. temporary servers and browser sessions used only for QA are stopped.

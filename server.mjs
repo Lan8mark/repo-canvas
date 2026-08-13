@@ -270,7 +270,7 @@ server.listen(port, host, () => {
   console.log(`Repo Canvas listening at http://${host}:${port}`);
   if (runtimeConfig.enabled && getSnapshot().semantic) {
     observerService = startObserver({ config: runtimeConfig });
-    console.log(`Repo Canvas observer: codex sessions for ${runtimeConfig.repoRoot}`);
+    console.log(`Repo Canvas observer: ${observerService.observer.adapters.map((item) => item.id).join(", ")} sessions for ${runtimeConfig.repoRoot}`);
   }
 });
 

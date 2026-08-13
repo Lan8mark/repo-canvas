@@ -19,12 +19,14 @@ export function readRuntimeConfig() {
     return {
       enabled: parsed.enabled === true,
       repoRoot: fs.realpathSync.native(parsed.repoRoot || projectRoot),
-      provider: parsed.provider || "codex",
+      providers: Array.isArray(parsed.providers) && parsed.providers.length
+        ? [...new Set(parsed.providers.map(String))]
+        : [parsed.provider || "codex"],
       pollMs: Math.max(250, Number(parsed.pollMs) || 750),
     };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { enabled: false, repoRoot: fs.realpathSync.native(projectRoot), provider: "codex", pollMs: 750 };
+    return { enabled: false, repoRoot: fs.realpathSync.native(projectRoot), providers: ["codex", "claude", "kimi"], pollMs: 750 };
   }
 }
 
@@ -40,7 +42,7 @@ export function readObserverState() {
     return JSON.parse(fs.readFileSync(observerStateFile, "utf8"));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { version: 1, sessions: {} };
+    return { version: 2, initializedProviders: [], sessions: {} };
   }
 }
 

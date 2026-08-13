@@ -168,13 +168,13 @@ if (args.root === true) {
           effort: args.effort && args.effort !== true ? String(args.effort) : undefined,
         });
       }
-      const observer = writeRuntimeConfig({ enabled: true, provider: "codex" });
+      const observer = writeRuntimeConfig({ enabled: true, providers: ["codex", "claude", "kimi"] });
       console.log(JSON.stringify({ ok: true, probe, architect, observer }, null, 2));
     } else if (command === "observer") {
       const action = args._[0] || "status";
       const { readRuntimeConfig, writeRuntimeConfig } = await import("./runtime-config.mjs");
       if (action === "enable") {
-        console.log(JSON.stringify(writeRuntimeConfig({ enabled: true, provider: "codex" }), null, 2));
+        console.log(JSON.stringify(writeRuntimeConfig({ enabled: true, providers: ["codex", "claude", "kimi"] }), null, 2));
       } else if (action === "disable") {
         console.log(JSON.stringify(writeRuntimeConfig({ enabled: false }), null, 2));
       } else if (action === "status") {
@@ -185,7 +185,7 @@ if (args.root === true) {
       } else if (action === "start") {
         const { startObserver } = await import("./observer.mjs");
         const service = startObserver();
-        console.log(`Repo Canvas observer watching ${service.observer.config.repoRoot}`);
+        console.log(`Repo Canvas observer watching ${service.observer.config.repoRoot} via ${service.observer.adapters.map((item) => item.id).join(", ")}`);
         await new Promise((resolve) => {
           const stop = async () => { await service.stop(); resolve(); };
           process.once("SIGINT", stop); process.once("SIGTERM", stop);

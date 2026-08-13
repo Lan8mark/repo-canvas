@@ -2,12 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { appendEvent, createEvent, getSnapshot } from "./canvas-store.mjs";
-import {
-  listCodexSessionFiles, readAppendedRecords, readSessionMeta, sessionBelongsToRepository, sessionSignals,
-} from "./codex-sessions.mjs";
+import { readAppendedRecords } from "./codex-sessions.mjs";
 import { runCodexStructured } from "./model-runtime.mjs";
 import { OBSERVER_OUTPUT_SCHEMA, applyObserverDecision } from "./semantic-model.mjs";
 import { readObserverState, readRuntimeConfig, writeObserverState } from "./runtime-config.mjs";
+import { sessionAdapter, sessionAdapters } from "./session-adapters.mjs";
 
 const MAX_EVENTS = 80;
 const INITIAL_DEADLINE_MS = 5_000;
@@ -46,22 +45,12 @@ Rules:
 
 Final checkpoint: ${final ? "yes" : "no"}
 Session: ${JSON.stringify({ id: turn.sessionId, model: turn.model, effort: turn.effort })}
-Current work: ${JSON.stringify({ title: turn.title, summary: turn.summary, targets: turn.targets })}
+Current work: ${JSON.stringify({ request: turn.userMessage, title: turn.title, summary: turn.summary, targets: turn.targets })}
 Current semantic map: ${JSON.stringify(compactMap(snapshot))}
 New public events: ${JSON.stringify(turn.events)}`;
 }
 
-function sessionLocator(meta, firstUserMessage = "") {
-  const desktop = /desktop/i.test(meta.originator || "");
-  return {
-    kind: desktop ? "codex-app" : "codex-cli",
-    id: meta.id || meta.session_id,
-    title: firstUserMessage.slice(0, 160) || "Observed Codex work",
-    cwd: meta.cwd,
-  };
-}
-
-function provisionalWork(turn, meta) {
+function provisionalWork(turn, meta, adapter) {
   appendEvent(createEvent("work.upsert", {
     actor: "observer",
     payload: {
@@ -71,7 +60,7 @@ function provisionalWork(turn, meta) {
       targets: [],
       note: "Агент осмысливает задачу",
       provisional: true,
-      session: sessionLocator(meta),
+      session: adapter.locator(meta),
     },
   }));
 }
@@ -87,6 +76,7 @@ export class CodexObserver {
     runner = runCodexStructured,
     now = () => Date.now(),
     sessionsRoot,
+    adapters,
     replay = false,
   } = {}) {
     this.config = config;
@@ -94,19 +84,21 @@ export class CodexObserver {
     this.runner = runner;
     this.now = now;
     this.sessionsRoot = sessionsRoot;
+    const configured = config.providers || (config.provider ? [config.provider] : ["codex", "claude", "kimi"]);
+    this.adapters = adapters || (sessionsRoot ? [sessionAdapter("codex")] : sessionAdapters(configured));
     this.replay = replay;
-    this.initialDiscoveryDone = false;
     this.gitCache = new Map();
     this.running = new Map();
   }
 
-  ensureSession(file, meta, baseline = false) {
+  ensureSession(file, meta, adapter, baseline = false) {
     const key = path.resolve(file);
     let session = this.state.sessions[key];
     if (!session) {
       session = {
         offset: this.replay || !baseline ? 0 : fs.statSync(file).size,
-        relevant: sessionBelongsToRepository(meta, this.config.repoRoot, this.gitCache),
+        relevant: false,
+        provider: adapter.id,
         meta,
         turns: {},
       };
@@ -116,14 +108,22 @@ export class CodexObserver {
   }
 
   discover() {
-    const baseline = !this.initialDiscoveryDone;
-    for (const file of listCodexSessionFiles(this.sessionsRoot)) {
-      let meta;
-      try { meta = readSessionMeta(file); } catch { continue; }
-      if (!meta) continue;
-      this.ensureSession(file, meta, baseline);
+    this.state.initializedProviders ||= [];
+    for (const adapter of this.adapters) {
+      const providerKnown = this.state.initializedProviders.includes(adapter.id)
+        || Object.values(this.state.sessions).some((session) => (session.provider || "codex") === adapter.id);
+      const baseline = !providerKnown;
+      const root = adapter.id === "codex" ? this.sessionsRoot : undefined;
+      for (const file of adapter.listFiles(root)) {
+        let meta;
+        try { meta = adapter.readMeta(file, root); } catch { continue; }
+        if (!meta) continue;
+        const session = this.ensureSession(file, meta, adapter, baseline);
+        session.provider = adapter.id;
+        session.relevant = adapter.belongsToRepository(meta, this.config.repoRoot, this.gitCache);
+      }
+      if (!this.state.initializedProviders.includes(adapter.id)) this.state.initializedProviders.push(adapter.id);
     }
-    this.initialDiscoveryDone = true;
   }
 
   currentTurn(session, turnId) {
@@ -136,12 +136,12 @@ export class CodexObserver {
       const turnId = signal.turnId || `turn-${this.now()}`;
       const turn = {
         turnId, workId: workId(session.meta.id || session.meta.session_id, turnId),
-        sessionId: session.meta.id || session.meta.session_id,
+        sessionId: session.meta.id || session.meta.session_id, provider: session.provider || "codex",
         startedAt: this.now(), events: [], inferredAt: 0, initialInferred: false,
         title: "Новая работа", summary: "Агент осмысливает задачу", targets: [], finished: false,
       };
       session.turns[turnId] = turn;
-      provisionalWork(turn, session.meta);
+      provisionalWork(turn, session.meta, sessionAdapter(session.provider || "codex"));
       return;
     }
     const turn = this.currentTurn(session, signal.turnId);
@@ -150,11 +150,18 @@ export class CodexObserver {
       turn.model = signal.model; turn.effort = signal.effort;
       return;
     }
-    turn.events.push(signal);
+    const previous = turn.events.at(-1);
+    if (signal.kind === "agent" && previous?.kind === "agent") {
+      const combined = `${previous.text || ""}${signal.text || ""}`;
+      previous.text = combined.length <= 2_500 ? combined : `${combined.slice(0, 1_200)}\n…\n${combined.slice(-1_200)}`;
+      previous.at = signal.at || previous.at;
+    } else {
+      turn.events.push(signal);
+    }
     if (turn.events.length > MAX_EVENTS) turn.events.splice(0, turn.events.length - MAX_EVENTS);
     if (signal.kind === "user") {
       turn.userMessage = signal.text;
-      turn.session = sessionLocator(session.meta, signal.text);
+      turn.session = sessionAdapter(session.provider || "codex").locator(session.meta, signal.text);
     }
     if (signal.kind === "complete" || signal.kind === "aborted") {
       turn.finished = true;
@@ -176,7 +183,7 @@ export class CodexObserver {
         if (final && turn.finalKind === "aborted") result.value.workStatus = "stopped";
         const context = {
           workId: turn.workId,
-          session: turn.session || sessionLocator({ id: turn.sessionId, cwd: this.config.repoRoot }),
+          session: turn.session || sessionAdapter(turn.provider || "codex").locator({ id: turn.sessionId, cwd: this.config.repoRoot }),
           final,
         };
         applyObserverDecision(result.value, context);
@@ -226,9 +233,10 @@ export class CodexObserver {
     this.discover();
     for (const [file, session] of Object.entries(this.state.sessions)) {
       if (!session.relevant || !fs.existsSync(file)) continue;
+      const adapter = sessionAdapter(session.provider || "codex");
       const delta = readAppendedRecords(file, session.offset);
       session.offset = delta.offset;
-      for (const record of delta.records) for (const signal of sessionSignals(record)) this.handleSignal(session, signal);
+      for (const record of delta.records) for (const signal of adapter.signals(record)) this.handleSignal(session, signal);
     }
     await this.runDue();
     this.state.updatedAt = new Date(this.now()).toISOString();
@@ -240,7 +248,7 @@ export class CodexObserver {
     const sessions = Object.values(this.state.sessions);
     const turns = sessions.flatMap((session) => Object.values(session.turns || {}));
     return {
-      provider: "codex", repoRoot: this.config.repoRoot,
+      providers: this.adapters.map((adapter) => adapter.id), repoRoot: this.config.repoRoot,
       trackedSessions: sessions.filter((session) => session.relevant).length,
       ignoredSessions: sessions.filter((session) => !session.relevant).length,
       activeTurns: turns.filter((turn) => !turn.finished).length,
@@ -248,6 +256,8 @@ export class CodexObserver {
     };
   }
 }
+
+export const SessionObserver = CodexObserver;
 
 export async function runObserverOnce(options = {}) {
   const observer = new CodexObserver(options);

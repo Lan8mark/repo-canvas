@@ -120,6 +120,8 @@ Old agent-facing contract that must be migrated away.
 
   const installedCli = path.join(root, "node_modules", "repo-canvas", "repo-canvas", "scripts", "canvas.mjs");
   assert.ok(fs.existsSync(installedCli), "CLI source missing from packed artifact");
+  assert.ok(fs.existsSync(path.join(root, "node_modules", "repo-canvas", "repo-canvas", "scripts", "claude-sessions.mjs")));
+  assert.ok(fs.existsSync(path.join(root, "node_modules", "repo-canvas", "repo-canvas", "scripts", "kimi-sessions.mjs")));
   assert.ok(fs.existsSync(path.join(root, "node_modules", ".bin", process.platform === "win32" ? "repo-canvas.cmd" : "repo-canvas")));
   run(process.execPath, [installedCli, "init"], root);
   const managedFiles = ["package.json", "package-lock.json", "AGENTS.md", ".gitignore", "repo-canvas/SKILL.md", ".codex/hooks.json"];
