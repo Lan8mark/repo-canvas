@@ -1,8 +1,8 @@
-# Repo Canvas 0.7
+# Repo Canvas 0.8
 
 A local semantic map for large repositories. It shows permanent project structure and overlays live Codex, Claude Code and Kimi Code work as small session-linked satellites.
 
-## What changed in 0.7
+## What changed in 0.8
 
 Repo Canvas now maintains itself outside the coding agent's context:
 
@@ -12,7 +12,9 @@ Repo Canvas now maintains itself outside the coding agent's context:
 - `gpt-5.4-mini` classifies the work from small session deltas and attaches it to semantic entities;
 - completion updates affected passports and can remove a concept only when the session establishes that the concept itself was eliminated;
 - file deletion by itself never deletes a Canvas entity;
-- normal coding sessions receive no Repo Canvas prompt, hook, or `AGENTS.md` contract.
+- normal coding sessions receive no Repo Canvas prompt, hook, or `AGENTS.md` contract;
+- installation never reads or rewrites `AGENTS.md`, `CLAUDE.md`, coding-agent hooks, or provider credentials;
+- the storage contract contains only semantic areas, entities, relations, work satellites and activity — the old task-board and owner-command formats are gone.
 
 The observer does not read hidden reasoning, tool results, scan product files, control agents, or send owner commands. It reads the public local journals used by each agent's resume/history feature and filters them by repository root. Kimi `think` parts and Claude `thinking` parts are ignored.
 
@@ -41,21 +43,21 @@ https://github.com/m0ast-git/repo-canvas
 The agent should read this README and [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt), then install the pinned release directly from GitHub:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.7.0
+npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.0
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
 
 This is the primary installation scenario. It does not require downloading or unpacking an archive manually.
 
-For an offline hand-off, send two files from the release kit: `repo-canvas-0.7.0.tgz` and `INSTALL_WITH_AGENT.txt`.
+For an offline hand-off, send two files from the release kit: `repo-canvas-0.8.0.tgz` and `INSTALL_WITH_AGENT.txt`.
 
 The recipient places them in an existing repository, opens one coding-agent conversation there, attaches the text file and asks the agent to install it. After installation, product agents do not need to know Repo Canvas exists.
 
 ## Manual installation
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.7.0.tgz
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.0.tgz
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
@@ -80,8 +82,6 @@ REPO_CANVAS_ARCHITECT_EFFORT
 REPO_CANVAS_OBSERVER_MODEL
 REPO_CANVAS_OBSERVER_EFFORT
 ```
-
-Legacy semantic CLI commands and v0.3-v0.5 event logs remain readable after upgrade.
 
 ## Privacy boundary
 

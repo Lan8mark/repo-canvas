@@ -140,9 +140,7 @@ function saveLayout(body) {
 
 function findSessionNode(body) {
   const workId = String(body.workId || "").trim();
-  const nodeId = String(body.nodeId || "").trim();
-  const taskId = String(body.taskId || "").trim();
-  if (!workId && (!nodeId || !taskId)) throw new HttpError(400, "workId or taskId + nodeId is required");
+  if (!workId) throw new HttpError(400, "workId is required");
   const snapshot = getSnapshot();
   if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before navigation");
   const requestedRevision = Number(body.canvasRevision);
@@ -152,10 +150,8 @@ function findSessionNode(body) {
   if (requestedRevision !== snapshot.revision) {
     throw new HttpError(409, "Canvas changed; refresh before opening this work session", { revision: snapshot.revision });
   }
-  const node = workId
-    ? snapshot.work.find((item) => item.id === workId)
-    : snapshot.nodes.find((item) => item.taskId === taskId && item.id === nodeId);
-  if (!node) throw new HttpError(404, workId ? `Work not found: ${workId}` : `Node not found: ${taskId}/${nodeId}`);
+  const node = snapshot.work.find((item) => item.id === workId);
+  if (!node) throw new HttpError(404, `Work not found: ${workId}`);
   if (!node.session) throw new HttpError(422, "The agent did not attach a work session to this node");
   return node;
 }
@@ -234,12 +230,6 @@ const server = http.createServer(async (request, response) => {
       guardMutation(request);
       const result = saveLayout(await readJson(request));
       sendJson(response, 201, { ok: true, ...result });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/directives") {
-      guardMutation(request);
-      sendJson(response, 410, { ok: false, error: "Canvas commands were removed; open the agent's work session instead" });
       return;
     }
 

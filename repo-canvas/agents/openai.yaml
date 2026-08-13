@@ -1,4 +1,0 @@
-interface:
-  display_name: "Repo Canvas"
-  short_description: "Map project architecture and live agent work"
-  default_prompt: "Use $repo-canvas to build the semantic project map, attach current work to affected entities and the real agent session, and keep structural checkpoints truthful."

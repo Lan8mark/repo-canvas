@@ -80,14 +80,12 @@ function printHelp() {
   console.log(`Repo Canvas CLI
 
 Commands:
-  init        Install the repository contract and local scripts
+  init        Initialize local runtime scripts and ignored state
   start       Run the foreground loopback canvas server
   area        Upsert a large semantic project area
   entity      Upsert a persistent module or responsibility
   relation    Upsert a structural relation between entities
   work        Upsert a small agent-work satellite attached to entities
-  work start  Atomically register and verify active work before product writes
-  work guard  Fail unless this session has verified active work
   log         Record a decision or verification result
   snapshot    Print the reduced canvas state
   check       Validate the event log and print a summary
@@ -108,7 +106,6 @@ Examples:
   repo-canvas entity --id search --area knowledge --label "Standards search" --status operational --path src/search
   repo-canvas relation --from search --to registry --label "reads"
   repo-canvas work --id improve-search --title "Improve matching" --targets search --status active --actor codex
-  repo-canvas work start --id improve-search --title "Improve matching" --targets search --note "Tighten matching"
   repo-canvas setup
   repo-canvas architect --refresh
   repo-canvas observer status
@@ -195,13 +192,13 @@ if (args.root === true) {
       }
     } else {
       const { appendEvent, createEvent, getSnapshot, repairStore } = await import("./canvas-store.mjs");
-      const emit = (type, actor, taskId, payload) => {
-        const event = appendEvent(createEvent(type, { actor, taskId, payload: compact(payload) }));
+      const emit = (type, actor, payload) => {
+        const event = appendEvent(createEvent(type, { actor, payload: compact(payload) }));
         console.log(JSON.stringify(event, null, 2));
       };
 
       if (command === "area") {
-        emit("area.upsert", args.actor || "unknown", null, {
+        emit("area.upsert", args.actor || "unknown", {
           id: required(args, "id"),
           title: required(args, "title"),
           note: args.note || "",
@@ -210,7 +207,7 @@ if (args.root === true) {
           order: optionalNumber(args.order),
         });
       } else if (command === "entity") {
-        emit("entity.upsert", args.actor || "unknown", null, {
+        emit("entity.upsert", args.actor || "unknown", {
           id: required(args, "id"),
           areaId: required(args, "area"),
           label: required(args, "label"),
@@ -224,100 +221,20 @@ if (args.root === true) {
       } else if (command === "relation") {
         const from = required(args, "from");
         const to = required(args, "to");
-        emit("relation.upsert", args.actor || "unknown", null, {
+        emit("relation.upsert", args.actor || "unknown", {
           id: args.id || `${from}->${to}`,
           from, to,
           label: args.label || "",
           status: args.status || "existing",
         });
       } else if (command === "work") {
-        const action = args._[0] || "upsert";
-        if (action === "guard") {
-          const snapshot = getSnapshot();
-          const requestedId = args.id && args.id !== true ? String(args.id) : "";
-          const session = inferSession(args, "active");
-          const item = requestedId
-            ? snapshot.work.find((candidate) => candidate.id === requestedId)
-            : snapshot.work.find((candidate) => candidate.status === "active"
-              && session?.id && candidate.session?.id === session.id);
-          const validTargets = item?.targets?.length > 0 && item.targets.every((id) => snapshot.entities.some((entity) => entity.id === id));
-          const validSession = item?.session?.kind && (item.session.id || item.session.kind === "kimi-app");
-          if (!item || item.status !== "active" || !String(item.note || "").trim() || !validTargets || !validSession) {
-            throw new Error("Current session has no verified active work. Run `npm run repo-canvas -- work start --id <id> --title <title> --targets <entity-ids> --note <intent>` first.");
-          }
-          console.log(`Repo Canvas guard OK — ${item.id} is active for ${item.targets.join(", ")}.`);
-        } else if (action === "start") {
-          const before = getSnapshot();
-          const id = required(args, "id");
-          const title = required(args, "title");
-          const targets = list(required(args, "targets"));
-          const note = required(args, "note");
-          const unknownTargets = targets.filter((target) => !before.entities.some((entity) => entity.id === target));
-          if (unknownTargets.length) throw new Error(`Unknown work targets: ${unknownTargets.join(", ")}`);
-          const session = inferSession(args, "active");
-          if (!session?.kind || (!session.id && session.kind !== "kimi-app")) {
-            throw new Error("Active work must identify the current session; pass --surface and --session when it cannot be detected automatically");
-          }
-          appendEvent(createEvent("work.upsert", {
-            actor: args.actor || "unknown",
-            payload: { id, title, status: "active", targets, note, session },
-          }), { expectedRevision: before.revision });
-          const after = getSnapshot();
-          const registered = after.work.find((item) => item.id === id);
-          const verified = after.revision === before.revision + 1
-            && registered?.status === "active"
-            && registered.note === note
-            && registered.session?.kind === session.kind
-            && registered.session?.id === session.id
-            && targets.every((target) => registered.targets.includes(target));
-          if (!verified) throw new Error("Work event was written but verification failed; stop before changing product files and run canvas check");
-          console.log(JSON.stringify({ ok: true, verified: true, revision: after.revision, work: registered }, null, 2));
-        } else {
-          const status = args.status || "planned";
-          emit("work.upsert", args.actor || "unknown", null, {
-            id: required(args, "id"), title: required(args, "title"), status,
-            targets: list(required(args, "targets")), note: args.note || "", session: inferSession(args, status),
-          });
-        }
-      } else if (command === "hook") {
-        const { runHook } = await import("./canvas-hook.mjs");
-        await runHook();
-      } else if (command === "task") {
-        const id = required(args, "id");
-        emit("task.upsert", args.actor || "unknown", id, {
-          id,
-          title: required(args, "title"),
-          status: args.status || "planned",
-          summary: args.summary || "",
-        });
-      } else if (command === "node") {
-        const taskId = required(args, "task");
         const status = args.status || "planned";
-        emit("node.upsert", args.actor || "unknown", taskId, {
-          id: required(args, "id"),
-          label: required(args, "label"),
-          path: args.path || "",
-          status,
-          risk: args.risk || "safe",
-          note: args.note || "",
-          x: optionalNumber(args.x),
-          y: optionalNumber(args.y),
-          order: optionalNumber(args.order),
-          session: inferSession(args, status),
-        });
-      } else if (command === "edge") {
-        const taskId = required(args, "task");
-        const from = required(args, "from");
-        const to = required(args, "to");
-        emit("edge.upsert", args.actor || "unknown", taskId, {
-          id: args.id || `${from}->${to}`,
-          from,
-          to,
-          label: args.label || "",
-          status: args.status || "planned",
+        emit("work.upsert", args.actor || "unknown", {
+          id: required(args, "id"), title: required(args, "title"), status,
+          targets: list(required(args, "targets")), note: args.note || "", session: inferSession(args, status),
         });
       } else if (command === "log") {
-        emit("activity.log", args.actor || "unknown", args.task || null, {
+        emit("activity.log", args.actor || "unknown", {
           message: required(args, "message"),
           level: args.level || "info",
         });

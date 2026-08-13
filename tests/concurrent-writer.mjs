@@ -8,7 +8,6 @@ for (let index = 0; index < Number(countText); index += 1) {
   appendEvent(
     createEvent("activity.log", {
       actor,
-      taskId: "concurrency",
       payload: { message: `${actor} event ${index}`, level: "info" },
     }),
   );

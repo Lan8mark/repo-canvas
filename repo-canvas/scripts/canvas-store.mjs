@@ -92,14 +92,13 @@ export function ensureStore() {
   withStoreLock(() => undefined);
 }
 
-export function createEvent(type, { actor = "unknown", taskId = null, payload = {} } = {}) {
+export function createEvent(type, { actor = "unknown", payload = {} } = {}) {
   return {
     v: 1,
     id: `evt_${crypto.randomUUID()}`,
     ts: new Date().toISOString(),
     type,
     actor,
-    taskId,
     payload,
   };
 }
@@ -249,14 +248,6 @@ export function repairStore({ apply = false } = {}) {
   });
 }
 
-function taskKey(taskId) {
-  return String(taskId || "unassigned");
-}
-
-function entityKey(taskId, id) {
-  return `${taskKey(taskId)}::${String(id)}`;
-}
-
 function naturalCompare(a, b) {
   return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
 }
@@ -271,11 +262,6 @@ function activityLabel(event) {
   if (event.type === "relation.upsert") return `Relation ${payload.from} → ${payload.to}`;
   if (event.type === "relation.remove") return `Relation ${payload.id} removed`;
   if (event.type === "work.upsert") return `Work ${payload.title || payload.id} → ${payload.status || "updated"}`;
-  if (event.type === "task.upsert") return `Task ${payload.title || payload.id} → ${payload.status || "updated"}`;
-  if (event.type === "node.upsert") return `${payload.label || payload.id} → ${payload.status || "updated"}`;
-  if (event.type === "edge.upsert") return `Connection ${payload.from} → ${payload.to}`;
-  if (event.type === "directive.created") return `Owner: ${payload.action} ${payload.targetId || "task"}`;
-  if (event.type === "directive.ack") return `Directive acknowledged by ${event.actor}`;
   return event.type;
 }
 
@@ -284,15 +270,10 @@ export function reduceEvents(events, errors = []) {
   const entities = new Map();
   const relations = new Map();
   const work = new Map();
-  const tasks = new Map();
-  const nodes = new Map();
-  const edges = new Map();
-  const directives = new Map();
   const activity = [];
 
   for (const event of events) {
     const payload = event.payload || {};
-    const currentTaskId = taskKey(event.taskId || payload.taskId || payload.id);
 
     if (event.type === "area.upsert") {
       const id = String(payload.id);
@@ -339,84 +320,16 @@ export function reduceEvents(events, errors = []) {
       work.set(id, { ...(work.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
     }
 
-    if (event.type === "task.upsert") {
-      const id = String(payload.id || currentTaskId);
-      tasks.set(id, { ...(tasks.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
-    }
-
-    if (event.type === "node.upsert") {
-      const id = String(payload.id);
-      const key = entityKey(currentTaskId, id);
-      nodes.set(key, {
-        ...(nodes.get(key) || {}),
-        ...payload,
-        id,
-        taskId: currentTaskId,
-        actor: event.actor,
-        updatedAt: event.ts,
-      });
-      if (!tasks.has(currentTaskId)) {
-        tasks.set(currentTaskId, { id: currentTaskId, title: currentTaskId, status: "active", actor: event.actor, updatedAt: event.ts });
-      }
-    }
-
-    if (event.type === "edge.upsert") {
-      const id = String(payload.id || `${payload.from}->${payload.to}`);
-      const key = entityKey(currentTaskId, id);
-      edges.set(key, {
-        ...(edges.get(key) || {}),
-        ...payload,
-        id,
-        taskId: currentTaskId,
-        actor: event.actor,
-        updatedAt: event.ts,
-      });
-    }
-
-    if (event.type === "directive.created") {
-      const id = String(payload.id || event.id);
-      directives.set(id, {
-        ...payload,
-        id,
-        taskId: event.taskId || payload.taskId || null,
-        status: "pending",
-        createdAt: event.ts,
-        createdBy: event.actor,
-      });
-    }
-
-    if (event.type === "directive.ack") {
-      const directiveId = String(payload.directiveId || "");
-      const current = directives.get(directiveId);
-      if (current) {
-        directives.set(directiveId, {
-          ...current,
-          status: "acknowledged",
-          acknowledgedAt: event.ts,
-          acknowledgedBy: event.actor,
-          response: payload.note || "",
-        });
-      }
-    }
-
     activity.push({
       id: event.id,
       ts: event.ts,
       actor: event.actor,
-      taskId: event.taskId,
       type: event.type,
-      level: payload.level || (event.type === "directive.created" ? "warning" : "info"),
+      level: payload.level || "info",
       message: activityLabel(event),
     });
   }
 
-  const taskList = [...tasks.values()].sort((a, b) => String(a.title).localeCompare(String(b.title)));
-  const nodeList = [...nodes.values()].sort((a, b) => {
-    if (a.taskId !== b.taskId) return a.taskId.localeCompare(b.taskId);
-    return Number(a.order || 0) - Number(b.order || 0) || String(a.label).localeCompare(String(b.label));
-  });
-  const edgeList = [...edges.values()];
-  const directiveList = [...directives.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const areaList = [...areas.values()].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || naturalCompare(a.title, b.title));
   const entityList = [...entities.values()].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || naturalCompare(a.label, b.label));
   const relationList = [...relations.values()];
@@ -440,22 +353,11 @@ export function reduceEvents(events, errors = []) {
     work: workList,
     activeEntityIds,
     semantic: areaList.length > 0 || entityList.length > 0,
-    tasks: taskList,
-    nodes: nodeList,
-    edges: edgeList,
-    directives: directiveList,
-    pendingDirectives: directiveList.filter((directive) => directive.status === "pending"),
     activity: activity.slice(-80).reverse(),
     summary: {
       areaCount: areaList.length,
       entityCount: entityList.length,
       activeWork: activeWork.filter((item) => item.status === "active").length,
-      taskCount: taskList.length,
-      activeTasks: taskList.filter((task) => task.status === "active").length,
-      nodeCount: nodeList.length,
-      activeNodes: nodeList.filter((node) => node.status === "active").length,
-      plannedNodes: nodeList.filter((node) => node.status === "planned").length,
-      pendingDirectives: directiveList.filter((directive) => directive.status === "pending").length,
       agents: [...new Set(events.map((event) => event.actor).filter(Boolean))],
     },
   };

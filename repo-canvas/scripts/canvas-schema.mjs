@@ -1,10 +1,6 @@
-export const TASK_STATUSES = new Set(["planned", "active", "blocked", "done", "stopped"]);
-export const NODE_STATUSES = new Set(["existing", "planned", "active", "changed", "done", "blocked", "rejected"]);
 export const ENTITY_STATUSES = new Set(["operational", "disabled", "problem", "planned"]);
 export const WORK_STATUSES = new Set(["planned", "active", "blocked", "done", "stopped"]);
-export const RISK_LEVELS = new Set(["safe", "caution", "destructive"]);
 export const ACTIVITY_LEVELS = new Set(["info", "success", "warning", "error"]);
-export const DIRECTIVE_ACTIONS = new Set(["explain", "correct", "stop", "reject", "rollback"]);
 export const SESSION_SURFACES = new Set([
   "codex-app", "claude-app", "kimi-app", "codex-cli", "claude-cli", "kimi-cli",
 ]);
@@ -12,9 +8,8 @@ export const EVENT_TYPES = new Set([
   "area.upsert", "area.remove", "entity.upsert", "entity.remove",
   "relation.upsert", "relation.remove", "work.upsert",
   "activity.log",
-  // v0.3 compatibility: old repositories remain readable after upgrade.
-  "task.upsert", "node.upsert", "edge.upsert", "directive.created", "directive.ack",
 ]);
+const EVENT_FIELDS = new Set(["v", "id", "ts", "type", "actor", "payload"]);
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:>\-]{0,127}$/;
 
@@ -92,6 +87,7 @@ function validateSessionLocator(errors, value) {
 export function validateEvent(event) {
   const errors = [];
   if (!plainObject(event)) return ["event must be an object"];
+  for (const field of Object.keys(event)) if (!EVENT_FIELDS.has(field)) errors.push(`unknown event field '${field}'`);
   if (event.v !== 1) errors.push(`unsupported event version '${String(event.v)}'`);
   requireString(errors, event.id, "id", { max: 160, id: true });
   requireString(errors, event.ts, "ts", { max: 64 });
@@ -99,7 +95,6 @@ export function validateEvent(event) {
   requireString(errors, event.type, "type", { max: 80 });
   if (typeof event.type === "string" && !EVENT_TYPES.has(event.type)) errors.push(`unknown event type '${event.type}'`);
   requireString(errors, event.actor, "actor", { max: 64, id: true });
-  if (event.taskId !== null && event.taskId !== undefined) requireString(errors, event.taskId, "taskId", { max: 128, id: true });
   if (!plainObject(event.payload)) {
     errors.push("payload must be an object");
     return errors;
@@ -150,27 +145,6 @@ export function validateEvent(event) {
   } else if (event.type === "activity.log") {
     requireString(errors, payload.message, "payload.message", { max: 4000 });
     if (payload.level !== undefined) requireStatus(errors, payload.level, "payload.level", ACTIVITY_LEVELS);
-  } else if (event.type === "task.upsert") {
-    requireString(errors, event.taskId, "taskId", { max: 128, id: true });
-    requireString(errors, payload.id, "payload.id", { max: 128, id: true });
-    requireString(errors, payload.title, "payload.title", { max: 240 });
-    requireStatus(errors, payload.status, "payload.status", TASK_STATUSES);
-    optionalString(errors, payload.summary, "payload.summary", 4000);
-  } else if (event.type === "node.upsert") {
-    requireString(errors, event.taskId, "taskId", { max: 128, id: true });
-    requireString(errors, payload.id, "payload.id", { max: 128, id: true });
-    requireString(errors, payload.label, "payload.label", { max: 240 });
-    requireStatus(errors, payload.status, "payload.status", NODE_STATUSES);
-    optionalString(errors, payload.path, "payload.path", 1000);
-    optionalString(errors, payload.note, "payload.note", 4000);
-    validateSessionLocator(errors, payload.session);
-    for (const field of ["x", "y", "order"]) if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
-  } else if (event.type === "edge.upsert") {
-    requireString(errors, event.taskId, "taskId", { max: 128, id: true });
-    requireString(errors, payload.id, "payload.id", { max: 128, id: true });
-    requireString(errors, payload.from, "payload.from", { max: 128, id: true });
-    requireString(errors, payload.to, "payload.to", { max: 128, id: true });
-    requireStatus(errors, payload.status, "payload.status", NODE_STATUSES);
   }
   return errors;
 }
@@ -178,7 +152,6 @@ export function validateEvent(event) {
 export function validateEventSequence(eventsWithLines) {
   const errors = [];
   const eventIds = new Set();
-  const legacyNodes = new Set();
   const areas = new Set();
   const entities = new Set();
   const entityAreas = new Map();
@@ -186,7 +159,6 @@ export function validateEventSequence(eventsWithLines) {
   for (const { event, line } of eventsWithLines) {
     if (eventIds.has(event.id)) errors.push({ line, id: event.id, message: "duplicate event id" });
     eventIds.add(event.id);
-    if (event.type === "node.upsert") legacyNodes.add(`${event.taskId}::${event.payload.id}`);
     if (event.type === "area.upsert") areas.add(event.payload.id);
     if (event.type === "area.remove") {
       areas.delete(event.payload.id);
@@ -213,14 +185,6 @@ export function validateEventSequence(eventsWithLines) {
     if (event.type === "work.upsert") {
       for (const target of event.payload.targets) if (!entities.has(target)) errors.push({ line, id: event.id, message: `work target '${target}' does not exist` });
     }
-  }
-
-  for (const { event, line } of eventsWithLines) {
-    if (event.type !== "edge.upsert") continue;
-    const from = `${event.taskId}::${event.payload.from}`;
-    const to = `${event.taskId}::${event.payload.to}`;
-    if (!legacyNodes.has(from)) errors.push({ line, id: event.id, message: `edge source '${event.payload.from}' does not exist` });
-    if (!legacyNodes.has(to)) errors.push({ line, id: event.id, message: `edge target '${event.payload.to}' does not exist` });
   }
   return errors;
 }

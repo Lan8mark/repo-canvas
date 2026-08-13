@@ -85,23 +85,16 @@ try {
   fs.mkdirSync(path.join(root, "src"));
   fs.writeFileSync(path.join(root, "pyproject.toml"), "[project]\nname = \"existing-python-project\"\nversion = \"1.0.0\"\n");
   fs.writeFileSync(path.join(root, "src", "app.py"), "print('existing product code')\n");
-  fs.writeFileSync(path.join(root, "AGENTS.md"), `# Owner instructions
-
-Keep this paragraph.
-
-<!-- repo-canvas:start -->
-## Repo Canvas
-Old agent-facing contract that must be migrated away.
-<!-- repo-canvas:end -->
-`);
+  fs.writeFileSync(path.join(root, "AGENTS.md"), "# Owner instructions\n\nKeep this paragraph byte-for-byte.\n");
   fs.mkdirSync(path.join(root, ".codex"), { recursive: true });
   fs.writeFileSync(path.join(root, ".codex", "hooks.json"), `${JSON.stringify({
     hooks: {
-      UserPromptSubmit: [{ hooks: [{ type: "command", command: "npm run --silent repo-canvas -- hook", timeout: 10 }] }],
       SessionStart: [{ hooks: [{ type: "command", command: "owner-command", timeout: 10 }] }],
     },
   }, null, 2)}\n`);
   assert.ok(!fs.existsSync(path.join(root, "package.json")), "Fixture must begin without an npm manifest");
+  const ownerAgents = fs.readFileSync(path.join(root, "AGENTS.md"));
+  const ownerHooks = fs.readFileSync(path.join(root, ".codex", "hooks.json"));
 
   fs.mkdirSync(path.join(conflictRoot, ".git"));
   fs.writeFileSync(
@@ -124,15 +117,13 @@ Old agent-facing contract that must be migrated away.
   assert.ok(fs.existsSync(path.join(root, "node_modules", "repo-canvas", "repo-canvas", "scripts", "kimi-sessions.mjs")));
   assert.ok(fs.existsSync(path.join(root, "node_modules", ".bin", process.platform === "win32" ? "repo-canvas.cmd" : "repo-canvas")));
   run(process.execPath, [installedCli, "init"], root);
-  const managedFiles = ["package.json", "package-lock.json", "AGENTS.md", ".gitignore", "repo-canvas/SKILL.md", ".codex/hooks.json"];
+  const managedFiles = ["package.json", "package-lock.json", "AGENTS.md", ".gitignore", ".codex/hooks.json"];
   const firstHash = hashFiles(root, managedFiles);
   run(process.execPath, [installedCli, "init"], root);
   assert.equal(hashFiles(root, managedFiles), firstHash, "Second init changed managed files");
-  assert.match(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /Keep this paragraph/);
-  assert.doesNotMatch(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /Repo Canvas/);
-  const hooks = JSON.parse(fs.readFileSync(path.join(root, ".codex", "hooks.json"), "utf8"));
-  assert.equal(hooks.hooks.SessionStart[0].hooks[0].command, "owner-command");
-  assert.equal(hooks.hooks.UserPromptSubmit, undefined);
+  assert.deepEqual(fs.readFileSync(path.join(root, "AGENTS.md")), ownerAgents, "init changed owner AGENTS.md");
+  assert.deepEqual(fs.readFileSync(path.join(root, ".codex", "hooks.json")), ownerHooks, "init changed owner hooks");
+  assert.ok(!fs.existsSync(path.join(root, "repo-canvas")), "init must not add an agent-facing repo-canvas directory");
   assert.ok(!fs.existsSync(path.join(root, "CLAUDE.md")), "init must not add agent context files");
   assert.match(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), /\/repo-canvas-\*\.tgz/);
   const initializedPackage = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -147,7 +138,7 @@ Old agent-facing contract that must be migrated away.
   run(process.execPath, [installedCli, "entity", "--id", "storage", "--area", "core", "--label", "Storage", "--path", "pyproject.toml", "--status", "operational", "--actor", "codex"], nested);
   run(process.execPath, [installedCli, "entity", "--id", "future", "--area", "core", "--label", "Planned module", "--status", "planned", "--actor", "codex"], nested);
   run(process.execPath, [installedCli, "relation", "--from", "api", "--to", "storage", "--status", "existing", "--actor", "codex"], nested);
-  run(process.execPath, [installedCli, "work", "start", "--id", "current-work", "--title", "Improve API", "--targets", "api,storage", "--note", "Exercise verified registration", "--actor", "codex", "--surface", "kimi-app", "--session-title", "Fixture work"], nested);
+  run(process.execPath, [installedCli, "work", "--id", "current-work", "--title", "Improve API", "--targets", "api,storage", "--status", "active", "--note", "Exercise work satellite", "--actor", "codex", "--surface", "kimi-app", "--session-title", "Fixture work"], nested);
   run(process.execPath, [installedCli, "check"], nested);
   const seeded = JSON.parse(run(process.execPath, [installedCli, "snapshot"], nested).stdout);
   assert.equal(seeded.semantic, true);

@@ -10,7 +10,7 @@ import test from "node:test";
 
 import { resolveSessionTarget } from "../repo-canvas/scripts/session-locator.mjs";
 import { reduceEvents } from "../repo-canvas/scripts/canvas-store.mjs";
-import { evaluateHook } from "../repo-canvas/scripts/canvas-hook.mjs";
+import { validateEvent } from "../repo-canvas/scripts/canvas-schema.mjs";
 import { anchoredZoomTransform, boxesOverlap, captionAwareDetour, captionShapesOverlap, chooseFloatingCaption, connectionAnchors, crossAreaDetour, packAreaRectangles, paddedBox, placeRelationLabel, relationCurve, sampleRelationCurve } from "../public/canvas-layout.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -124,7 +124,6 @@ test("semantic snapshot keeps hundreds of entities and relations without truncat
     ts: new Date(1_700_000_000_000 + index).toISOString(),
     type,
     actor: "scale-test",
-    taskId: null,
     payload,
   });
   const events = [];
@@ -153,6 +152,14 @@ test("semantic snapshot keeps hundreds of entities and relations without truncat
   assert.equal(snapshot.entities.length, 240);
   assert.equal(snapshot.relations.length, 283);
   assert.deepEqual(snapshot.entities.slice(0, 4).map((item) => item.label), ["Entity 1", "Entity 2", "Entity 3", "Entity 4"]);
+});
+
+test("legacy task-board events and fields are rejected", () => {
+  const base = {
+    v: 1, id: "legacy-event", ts: new Date().toISOString(), actor: "test", payload: {},
+  };
+  assert.match(validateEvent({ ...base, type: "task.upsert" }).join("\n"), /unknown event type/);
+  assert.match(validateEvent({ ...base, type: "activity.log", taskId: "old-task", payload: { message: "old" } }).join("\n"), /unknown event field 'taskId'/);
 });
 
 function makeRepository(t) {
@@ -285,31 +292,6 @@ test("session locators stay structured and Codex Desktop binds automatically", (
   assert.throws(() => resolveSessionTarget({ kind: "codex-app", id: "x; calc.exe" }), /Invalid codex-app session id/);
 });
 
-test("verified work start rejects bad targets and arms the write hook", (t) => {
-  const root = makeRepository(t);
-  assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"]).status, 0);
-  assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Module", "--status", "operational"]).status, 0);
-  const threadId = "019ff840-f9fd-7780-afba-203151d1bf7b";
-  const env = { CODEX_THREAD_ID: threadId, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop" };
-  const unknown = runCli(root, ["work", "start", "--id", "demo", "--title", "Demo", "--targets", "missing", "--note", "Real intent", "--actor", "codex"], { env });
-  assert.equal(unknown.status, 1);
-  assert.match(unknown.stderr, /Unknown work targets: missing/);
-  assert.match(runCli(root, ["check"]).stdout, /revision 2/);
-
-  const started = runCli(root, ["work", "start", "--id", "demo", "--title", "Demo", "--targets", "module", "--note", "Real intent", "--actor", "codex"], { env });
-  assert.equal(started.status, 0, started.stderr);
-  assert.equal(JSON.parse(started.stdout).verified, true);
-  const guarded = runCli(root, ["work", "guard"], { env });
-  assert.equal(guarded.status, 0, guarded.stderr);
-
-  const snapshot = JSON.parse(runCli(root, ["snapshot"]).stdout);
-  assert.equal(evaluateHook({ hook_event_name: "PreToolUse", session_id: threadId }, snapshot), null);
-  const blocked = evaluateHook({ hook_event_name: "PreToolUse", session_id: "another-session" }, snapshot);
-  assert.equal(blocked.permissionDecision, "deny");
-  assert.match(blocked.permissionDecisionReason, /work start/);
-  assert.match(evaluateHook({ hook_event_name: "UserPromptSubmit" }, snapshot).additionalContext, /before the first product write/);
-});
-
 test("concurrent processes serialize complete event appends and reclaim an old dead lock", async (t) => {
   const root = makeRepository(t);
   const store = path.join(root, ".repo-canvas");
@@ -363,7 +345,7 @@ test("repair previews and quarantines malformed JSON without hiding schema error
   assert.equal(runCli(root, ["check"]).status, 0);
 });
 
-test("loopback server guards navigation, retires directives, reports port collision, and stops", async (t) => {
+test("loopback server guards navigation, reports port collision, and stops", async (t) => {
   const root = makeRepository(t);
   assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"]).status, 0);
   assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Module", "--status", "operational"]).status, 0);
@@ -423,14 +405,6 @@ test("loopback server guards navigation, retires directives, reports port collis
     body: stalePayload,
   });
   assert.equal(stale.status, 409);
-
-  const retired = await request(port, {
-    method: "POST",
-    path: "/api/directives",
-    headers: { ...commonHeaders, Origin: `http://127.0.0.1:${port}` },
-    body: payload,
-  });
-  assert.equal(retired.status, 410);
 
   const layoutPayload = JSON.stringify({
     canvasRevision: state.json.revision,

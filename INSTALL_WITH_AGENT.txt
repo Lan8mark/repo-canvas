@@ -1,11 +1,11 @@
-REPO CANVAS 0.7.0 — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
+REPO CANVAS 0.8.0 — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
 Ты устанавливаешь локальную смысловую карту проекта с отдельными Architect и Observer. Выполни сценарий самостоятельно. Не анализируй архитектуру проекта вместо Architect и не меняй продуктовый код.
 
 Источник установки выбирается автоматически по тому, что дал владелец:
 
-- если владелец дал только ссылку `https://github.com/m0ast-git/repo-canvas`, используй закреплённый GitHub release `github:m0ast-git/repo-canvas#v0.7.0`;
-- если в корне проекта уже лежит `repo-canvas-0.7.0.tgz`, используй локальный архив и не обращайся к сети.
+- если владелец дал только ссылку `https://github.com/m0ast-git/repo-canvas`, используй закреплённый GitHub release `github:m0ast-git/repo-canvas#v0.8.0`;
+- если в корне проекта уже лежит `repo-canvas-0.8.0.tgz`, используй локальный архив и не обращайся к сети.
 
 1. Прочитай корневые инструкции проекта и проверь `git status`. Сохрани пользовательские и чужие изменения.
 
@@ -15,19 +15,19 @@ REPO CANVAS 0.7.0 — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕК�
 
    Если дан только GitHub-репозиторий:
 
-   npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.7.0
+   npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.0
 
    Если рядом лежит локальный архив:
 
-   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.7.0.tgz
+   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.0.tgz
 
    После успешной установки выполни:
 
    npx --no-install repo-canvas setup
 
    `setup` сам:
-   - безопасно обновит пакетные scripts и локальные служебные файлы;
-   - удалит старые Repo Canvas hooks/блоки из AGENTS.md, сохранив инструкции владельца;
+   - добавит только пакетные scripts, ignored runtime-состояние и необходимые строки `.gitignore`;
+   - не будет читать или менять `AGENTS.md`, `CLAUDE.md`, `.codex/hooks.json` и инструкции рабочих агентов;
    - проверит существующую локальную Codex-подписку;
    - запустит headless Architect на `gpt-5.6-sol`, reasoning medium;
    - построит полную смысловую карту без лимита сущностей;

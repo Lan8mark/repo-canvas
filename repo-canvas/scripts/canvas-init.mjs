@@ -6,11 +6,6 @@ import { spawnSync } from "node:child_process";
 import { ensureStore, getSnapshot } from "./canvas-store.mjs";
 import { packageRoot, projectRoot } from "./project-root.mjs";
 
-const AGENTS_START = "<!-- repo-canvas:start -->";
-const AGENTS_END = "<!-- repo-canvas:end -->";
-const SKILL_MARKER = "<!-- repo-canvas:managed -->";
-const hookCommand = "npm run --silent repo-canvas -- hook";
-
 const desiredScripts = {
   "repo-canvas": "repo-canvas",
   "repo-canvas:start": "repo-canvas start",
@@ -37,40 +32,6 @@ function readJson(file, label) {
     throw new Error(`${label} must contain a JSON object: ${file}`);
   }
   return parsed;
-}
-
-function removeRepoCanvasHooks(current, label) {
-  const parsed = current === null ? {} : JSON.parse(current);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} must contain a JSON object`);
-  parsed.hooks = parsed.hooks && typeof parsed.hooks === "object" && !Array.isArray(parsed.hooks) ? parsed.hooks : {};
-  for (const [event, groups] of Object.entries(parsed.hooks)) {
-    if (!Array.isArray(groups)) continue;
-    const cleaned = groups.map((group) => ({
-      ...group,
-      hooks: Array.isArray(group?.hooks) ? group.hooks.filter((hook) => hook?.command !== hookCommand) : group?.hooks,
-    })).filter((group) => !Array.isArray(group.hooks) || group.hooks.length > 0);
-    if (cleaned.length) parsed.hooks[event] = cleaned;
-    else delete parsed.hooks[event];
-  }
-  if (!Object.keys(parsed.hooks).length) delete parsed.hooks;
-  return `${JSON.stringify(parsed, null, 2)}\n`;
-}
-
-function markerCount(content, marker) {
-  return content.split(marker).length - 1;
-}
-
-function removeBlock(content, start, end, label) {
-  const current = content || "";
-  const starts = markerCount(current, start);
-  const ends = markerCount(current, end);
-  if (starts !== ends || starts > 1) throw new Error(`${label} has malformed or duplicate Repo Canvas markers`);
-  if (starts === 1) {
-    const startIndex = current.indexOf(start);
-    const endIndex = current.indexOf(end, startIndex) + end.length;
-    return `${current.slice(0, startIndex)}${current.slice(endIndex)}`.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
-  }
-  return current;
 }
 
 function ensureIgnoreLines(content) {
@@ -139,24 +100,6 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
     }
   }
 
-  const agentsFile = path.join(projectRoot, "AGENTS.md");
-  const agentsCurrent = readText(agentsFile);
-  const skillSource = fs.readFileSync(path.join(packageRoot, "repo-canvas", "SKILL.md"), "utf8");
-  if (!skillSource.includes(SKILL_MARKER)) throw new Error("Packaged SKILL.md is missing its managed marker");
-  const skillTarget = path.join(projectRoot, "repo-canvas", "SKILL.md");
-  const skillCurrent = readText(skillTarget);
-  if (skillCurrent !== null && skillCurrent !== skillSource && !skillCurrent.includes(SKILL_MARKER)) {
-    conflicts.push("repo-canvas/SKILL.md exists but is not package-managed");
-  }
-  const codexHooksFile = path.join(projectRoot, ".codex", "hooks.json");
-  try { removeRepoCanvasHooks(readText(codexHooksFile), ".codex/hooks.json"); } catch (error) { conflicts.push(error.message); }
-
-  try {
-    removeBlock(agentsCurrent, AGENTS_START, AGENTS_END, "AGENTS.md");
-  } catch (error) {
-    conflicts.push(error.message);
-  }
-
   const dependencySpec = packageDependencySpec(projectPackage, packageInfo.name);
   const installedVersion = installedPackageVersion(packageInfo.name);
   if (dependencySpec && installedVersion && installedVersion !== packageInfo.version && !upgrade) {
@@ -182,9 +125,6 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
 
   const writes = new Map();
   writes.set(projectManifest, `${JSON.stringify(projectPackage, null, 2)}\n`);
-  if (agentsCurrent !== null) writes.set(agentsFile, removeBlock(agentsCurrent, AGENTS_START, AGENTS_END, "AGENTS.md"));
-  writes.set(skillTarget, skillSource);
-  if (readText(codexHooksFile) !== null) writes.set(codexHooksFile, removeRepoCanvasHooks(readText(codexHooksFile), ".codex/hooks.json"));
 
   const gitignoreFile = path.join(projectRoot, ".gitignore");
   writes.set(gitignoreFile, ensureIgnoreLines(readText(gitignoreFile)));
