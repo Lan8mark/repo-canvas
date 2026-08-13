@@ -13,6 +13,8 @@ const elements = {
   legend: $("#canvasLegend"), legendToggle: $("#legendToggle"), legendClose: $("#legendClose"),
   renameDialog: $("#renameDialog"), renameForm: $("#renameForm"), renameTitle: $("#renameTitle"),
   renameInput: $("#renameInput"), renameCancel: $("#renameCancel"),
+  refreshCanvas: $("#refreshCanvas"), regenerateMap: $("#regenerateMap"), regenerateLabel: $("#regenerateLabel"),
+  regenerateDialog: $("#regenerateDialog"), cancelRegenerate: $("#cancelRegenerate"), confirmRegenerate: $("#confirmRegenerate"),
 };
 
 const ENTITY_W = 244;
@@ -43,6 +45,8 @@ let renameSaving = false;
 let renameTarget = null;
 let suppressEntityClickUntil = 0;
 let accessBlocked = false;
+let architectStatusTimer = null;
+let architectWasRunning = false;
 const collapsedAreas = new Set();
 const API_TOKEN_STORAGE_KEY = "repo-canvas.api-token";
 
@@ -634,7 +638,7 @@ async function poll(force = false) {
         accessBlocked = false;
         elements.accessState.hidden = true;
         elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
-        return;
+        return true;
       }
     }
     const response = await apiFetch(`/api/state?t=${Date.now()}`, { cache: "no-store" });
@@ -645,13 +649,65 @@ async function poll(force = false) {
     elements.accessState.hidden = true;
     if (force || !snapshot || next.revision !== snapshot.revision) { snapshot = next; render(); if (!fitDone && snapshot.semantic) { fitDone = true; requestAnimationFrame(fitView); } }
     else elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
+    return true;
   } catch (error) {
     elements.connection.className = "connection is-offline"; elements.connection.querySelector("b").textContent = "нет связи";
     const unauthorized = error?.message === "HTTP 401";
     accessBlocked = unauthorized;
     elements.accessState.hidden = !unauthorized;
     if (unauthorized) elements.emptyState.hidden = true;
+    return false;
   }
+}
+
+async function refreshCanvas() {
+  elements.refreshCanvas.disabled = true;
+  elements.refreshCanvas.classList.add("is-spinning");
+  const refreshed = await poll(true);
+  elements.refreshCanvas.classList.remove("is-spinning");
+  elements.refreshCanvas.disabled = false;
+  showToast(refreshed ? "Данные Canvas обновлены." : "Не удалось обновить Canvas.", !refreshed);
+}
+
+function renderArchitectStatus(state) {
+  const running = state.status === "running" || state.running;
+  elements.regenerateMap.disabled = running;
+  elements.regenerateMap.classList.toggle("is-running", running);
+  elements.regenerateLabel.textContent = running ? "Карта перестраивается…" : "Повторная генерация карты";
+  if (architectWasRunning && !running) {
+    if (state.status === "done") {
+      fitDone = false;
+      poll(true);
+      showToast("Карта проекта сгенерирована заново.");
+    } else if (state.status === "failed") showToast(`Генерация не завершена: ${state.error || "неизвестная ошибка"}`, true);
+  }
+  architectWasRunning = running;
+  clearTimeout(architectStatusTimer);
+  architectStatusTimer = running ? setTimeout(checkArchitectStatus, 1000) : null;
+}
+
+async function checkArchitectStatus() {
+  try {
+    const response = await apiFetch(`/api/architect/status?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    renderArchitectStatus(await response.json());
+  } catch {
+    clearTimeout(architectStatusTimer);
+    architectStatusTimer = setTimeout(checkArchitectStatus, 2500);
+  }
+}
+
+async function regenerateMap() {
+  elements.confirmRegenerate.disabled = true;
+  try {
+    const response = await apiFetch("/api/architect/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const state = await response.json();
+    if (!response.ok) throw new Error(state.error || "Не удалось запустить Architect");
+    elements.regenerateDialog.close();
+    renderArchitectStatus(state);
+    showToast(state.started ? "Повторная генерация карты запущена." : "Генерация карты уже выполняется.");
+  } catch (error) { showToast(error.message, true); }
+  finally { elements.confirmRegenerate.disabled = false; }
 }
 
 elements.allProject.addEventListener("click", () => selectArea("all"));
@@ -661,6 +717,10 @@ $("#zoomIn").addEventListener("click", () => zoomAtViewportCenter(1.16));
 $("#zoomOut").addEventListener("click", () => zoomAtViewportCenter(1 / 1.16));
 elements.legendToggle.addEventListener("click", () => setLegendOpen(elements.legend.hidden));
 elements.legendClose.addEventListener("click", () => setLegendOpen(false));
+elements.refreshCanvas.addEventListener("click", refreshCanvas);
+elements.regenerateMap.addEventListener("click", () => elements.regenerateDialog.showModal());
+elements.cancelRegenerate.addEventListener("click", () => elements.regenerateDialog.close());
+elements.confirmRegenerate.addEventListener("click", regenerateMap);
 elements.renameForm.addEventListener("submit", saveRename);
 elements.renameCancel.addEventListener("click", () => { renameTarget = null; elements.renameDialog.close(); });
 elements.renameDialog.addEventListener("cancel", () => { renameTarget = null; });
@@ -680,4 +740,4 @@ elements.world.addEventListener("pointermove", moveLayoutDrag);
 elements.world.addEventListener("pointerup", endLayoutDrag);
 elements.world.addEventListener("pointercancel", endLayoutDrag);
 window.addEventListener("resize", () => { if (snapshot?.semantic) fitView(); });
-poll(true); setInterval(poll, 250);
+poll(true); checkArchitectStatus(); setInterval(poll, 250);

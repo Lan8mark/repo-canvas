@@ -390,6 +390,17 @@ test("loopback server guards navigation, reports port collision, and stops", asy
   const revision = await request(port, { path: "/api/revision", headers: authHeaders });
   assert.equal(revision.status, 200);
   assert.equal(revision.json.revision, state.json.revision);
+  const architectStatus = await request(port, { path: "/api/architect/status", headers: authHeaders });
+  assert.equal(architectStatus.status, 200);
+  assert.equal(architectStatus.json.status, "idle");
+  assert.equal(architectStatus.json.running, false);
+  const guardedArchitectRefresh = await request(port, {
+    method: "POST",
+    path: "/api/architect/refresh",
+    headers: { ...authHeaders, "Content-Length": 2 },
+    body: "{}",
+  });
+  assert.equal(guardedArchitectRefresh.status, 415, "Architect refresh must keep the JSON mutation guard");
   const payload = JSON.stringify({
     workId: "demo",
     canvasRevision: state.json.revision,

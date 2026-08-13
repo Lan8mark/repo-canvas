@@ -47,7 +47,14 @@
     <section class="canvas-shell">
       <header class="canvas-header">
         <span><small>АРХИТЕКТУРА И ТЕКУЩАЯ РАБОТА</small><h1 id="canvasTitle">Весь проект</h1></span>
-        <nav><button id="zoomOut" type="button" aria-label="Уменьшить">−</button><button id="fitView" type="button">Показать всё</button><button id="zoomIn" type="button" aria-label="Увеличить">+</button><button id="legendToggle" class="legend-toggle" type="button" aria-controls="canvasLegend" aria-expanded="false"><span>Легенда</span></button></nav>
+        <nav>
+          <button id="refreshCanvas" class="refresh-action" type="button" aria-label="Обновить данные Canvas" title="Обновить данные Canvas">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.7-2.1L20 9M4 15l2.2 2.1A7 7 0 0 0 17.9 15" /></svg>
+          </button>
+          <button id="regenerateMap" class="regenerate-action" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6M4 12h10M4 18h16M16 4l4 4-4 4" /></svg><span id="regenerateLabel">Повторная генерация карты</span></button>
+          <i class="toolbar-divider" aria-hidden="true"></i>
+          <button id="zoomOut" type="button" aria-label="Уменьшить">−</button><button id="fitView" type="button">Показать всё</button><button id="zoomIn" type="button" aria-label="Увеличить">+</button><button id="legendToggle" class="legend-toggle" type="button" aria-controls="canvasLegend" aria-expanded="false"><span>Легенда</span></button>
+        </nav>
       </header>
       <div id="viewport" class="viewport" aria-label="Semantic repository canvas">
         <div id="world" class="world">
@@ -88,6 +95,14 @@
       <h2 id="renameTitle">Переименовать</h2>
       <label><span>Новое название</span><input id="renameInput" name="name" maxlength="240" autocomplete="off" required /></label>
       <div><button id="renameCancel" value="cancel" type="button">Отмена</button><button class="rename-save" value="save" type="submit">Сохранить</button></div>
+    </form>
+  </dialog>
+  <dialog id="regenerateDialog" class="action-dialog">
+    <form method="dialog">
+      <small>АРХИТЕКТОР ПРОЕКТА</small>
+      <h2>Повторно сгенерировать карту?</h2>
+      <p>Architect заново прочитает репозиторий, сверит смысловые области, сущности и связи с текущей картой. Ручные названия и расположение существующих элементов сохранятся.</p>
+      <div><button id="cancelRegenerate" value="cancel" type="button">Отмена</button><button id="confirmRegenerate" class="regenerate-confirm" value="confirm" type="button">Начать генерацию</button></div>
     </form>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

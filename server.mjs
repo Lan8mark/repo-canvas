@@ -5,6 +5,7 @@ import http from "node:http";
 import path from "node:path";
 
 import { appendEvents, createEvent, getSnapshot, packageRoot, projectRoot } from "./repo-canvas/scripts/canvas-store.mjs";
+import { runArchitect } from "./repo-canvas/scripts/architect.mjs";
 import { startObserver } from "./repo-canvas/scripts/observer.mjs";
 import { readRuntimeConfig } from "./repo-canvas/scripts/runtime-config.mjs";
 import { openSessionLocator } from "./repo-canvas/scripts/session-locator.mjs";
@@ -16,6 +17,32 @@ const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const runtimeConfig = readRuntimeConfig();
 const apiToken = crypto.randomBytes(32).toString("base64url");
 let observerService = null;
+let architectJob = null;
+let architectState = { status: "idle", startedAt: null, finishedAt: null, result: null, error: null };
+
+function publicArchitectState() {
+  return { ...architectState, running: architectJob !== null };
+}
+
+function startArchitectRefresh() {
+  if (architectJob) return false;
+  architectState = { status: "running", startedAt: new Date().toISOString(), finishedAt: null, result: null, error: null };
+  architectJob = runArchitect({ refresh: true })
+    .then((result) => {
+      architectState = { ...architectState, status: "done", finishedAt: new Date().toISOString(), result, error: null };
+    })
+    .catch((error) => {
+      architectState = {
+        ...architectState,
+        status: "failed",
+        finishedAt: new Date().toISOString(),
+        result: null,
+        error: String(error?.message || error).slice(0, 500),
+      };
+    })
+    .finally(() => { architectJob = null; });
+  return true;
+}
 
 function openCanvasInBrowser(url) {
   if (process.env.REPO_CANVAS_AUTO_OPEN === "0" || process.env.NODE_ENV === "test") return;
@@ -271,6 +298,11 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/architect/status") {
+      sendJson(response, 200, publicArchitectState());
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/favicon.ico") {
       response.writeHead(204, { "Cache-Control": "public, max-age=86400" });
       response.end();
@@ -301,6 +333,14 @@ const server = http.createServer(async (request, response) => {
       guardMutation(request);
       const result = saveRename(await readJson(request));
       sendJson(response, 201, { ok: true, ...result });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/architect/refresh") {
+      guardMutation(request);
+      await readJson(request);
+      const started = startArchitectRefresh();
+      sendJson(response, 202, { ok: true, started, ...publicArchitectState() });
       return;
     }
 
