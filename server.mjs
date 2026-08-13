@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -12,6 +13,7 @@ const port = Number(process.env.CANVAS_PORT || 4173);
 const publicDirectory = path.join(packageRoot, "public");
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const runtimeConfig = readRuntimeConfig();
+const apiToken = crypto.randomBytes(32).toString("base64url");
 let observerService = null;
 
 if (!loopbackHosts.has(host)) throw new Error(`Repo Canvas only binds to loopback; received CANVAS_HOST=${host}`);
@@ -83,6 +85,16 @@ function guardMutation(request) {
   }
   const origin = request.headers.origin;
   if (origin) parseLoopbackUrl(String(origin), "Origin");
+}
+
+function guardApiAuthorization(request) {
+  const supplied = request.headers["x-repo-canvas-token"];
+  if (typeof supplied !== "string") throw new HttpError(401, "Repo Canvas API token is required");
+  const expectedBuffer = Buffer.from(apiToken);
+  const suppliedBuffer = Buffer.from(supplied);
+  if (expectedBuffer.length !== suppliedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)) {
+    throw new HttpError(401, "Repo Canvas API token is invalid");
+  }
 }
 
 async function readJson(request) {
@@ -187,6 +199,7 @@ const server = http.createServer(async (request, response) => {
   try {
     guardRequest(request);
     const url = new URL(request.url || "/", `http://${host}:${port}`);
+    if (url.pathname.startsWith("/api/")) guardApiAuthorization(request);
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, {
@@ -257,7 +270,7 @@ server.once("error", (error) => {
 
 server.listen(port, host, () => {
   console.log(`Repo Canvas root: ${projectRoot}`);
-  console.log(`Repo Canvas listening at http://${host}:${port}`);
+  console.log(`Repo Canvas listening at http://${host}:${port}/#token=${apiToken}`);
   if (runtimeConfig.enabled && getSnapshot().semantic) {
     observerService = startObserver({ config: runtimeConfig });
     console.log(`Repo Canvas observer: ${observerService.observer.adapters.map((item) => item.id).join(", ")} sessions for ${runtimeConfig.repoRoot}`);

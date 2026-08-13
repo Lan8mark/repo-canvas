@@ -54,9 +54,11 @@ function freePort() {
   });
 }
 
-function request(port, requestPath) {
+function request(port, requestPath, token = "") {
   return new Promise((resolve, reject) => {
-    http.get({ host: "127.0.0.1", port, path: requestPath, headers: { Host: `127.0.0.1:${port}` } }, (response) => {
+    const headers = { Host: `127.0.0.1:${port}` };
+    if (token) headers["X-Repo-Canvas-Token"] = token;
+    http.get({ host: "127.0.0.1", port, path: requestPath, headers }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString("utf8") }));
@@ -156,8 +158,10 @@ try {
     stdio: ["ignore", "pipe", "pipe"],
   });
   try {
-    await waitFor(server, /listening at/);
-    const health = await request(port, "/api/health");
+    const startedOutput = await waitFor(server, /listening at/);
+    const apiToken = startedOutput.match(/#token=([A-Za-z0-9_-]{43})/)?.[1];
+    assert.ok(apiToken, `Server did not print a per-launch API token: ${startedOutput}`);
+    const health = await request(port, "/api/health", apiToken);
     assert.equal(health.status, 200);
     assert.equal(JSON.parse(health.body).root, fs.realpathSync.native(root));
     const page = await request(port, "/");

@@ -39,6 +39,26 @@ let layoutSaving = false;
 let suppressEntityClickUntil = 0;
 const collapsedAreas = new Set();
 const RELATION_CAPTION_FRAME_MS = 1000 / 60;
+const API_TOKEN_STORAGE_KEY = "repo-canvas.api-token";
+
+function resolveApiToken() {
+  const parameters = new URLSearchParams(window.location.hash.slice(1));
+  const token = parameters.get("token");
+  if (token) {
+    sessionStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    return token;
+  }
+  return sessionStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
+}
+
+const apiToken = resolveApiToken();
+
+function apiFetch(input, init = {}) {
+  const headers = new Headers(init.headers || {});
+  if (apiToken) headers.set("X-Repo-Canvas-Token", apiToken);
+  return fetch(input, { ...init, headers });
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -469,7 +489,7 @@ async function endLayoutDrag(event) {
   render();
   layoutSaving = true;
   try {
-    const response = await fetch("/api/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ canvasRevision: snapshot.revision, items }) });
+    const response = await apiFetch("/api/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ canvasRevision: snapshot.revision, items }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Не удалось сохранить раскладку");
     snapshot.revision = result.revision;
@@ -485,7 +505,7 @@ async function endLayoutDrag(event) {
 async function openWork(item) {
   if (!item?.session) return showToast("К этой работе не привязана сессия агента.", true);
   try {
-    const response = await fetch("/api/sessions/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workId: item.id, canvasRevision: snapshot.revision }) });
+    const response = await apiFetch("/api/sessions/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workId: item.id, canvasRevision: snapshot.revision }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Не удалось открыть сессию");
     if (result.outcome === "resume") {
@@ -500,7 +520,7 @@ async function poll(force = false) {
   if (layoutDrag || layoutSaving) return;
   try {
     if (!force && snapshot) {
-      const revisionResponse = await fetch(`/api/revision?t=${Date.now()}`, { cache: "no-store" });
+      const revisionResponse = await apiFetch(`/api/revision?t=${Date.now()}`, { cache: "no-store" });
       if (!revisionResponse.ok) throw new Error(`HTTP ${revisionResponse.status}`);
       const revision = await revisionResponse.json();
       if (revision.revision === snapshot.revision) {
@@ -509,7 +529,7 @@ async function poll(force = false) {
         return;
       }
     }
-    const response = await fetch(`/api/state?t=${Date.now()}`, { cache: "no-store" });
+    const response = await apiFetch(`/api/state?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const next = await response.json();
     elements.connection.className = "connection is-online"; elements.connection.querySelector("b").textContent = "онлайн";

@@ -63,7 +63,7 @@ Observer reads public user messages, agent messages and tool-call metadata. Clau
 
 The npm installation adds Repo Canvas as an exact development dependency. `setup` adds three package scripts, the ignored `.repo-canvas/` runtime directory and two `.gitignore` entries. It does not add coding-agent instructions or hooks.
 
-The server binds to loopback only. Semantic events and Observer cursors stay in the repository's ignored `.repo-canvas/` directory. Model calls use existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters only parse their local journals; they do not copy credentials or call those providers. No API key is copied into the project.
+The server binds to loopback only and prints a fresh tokenized Canvas URL on every start. Use that exact URL; the token stays in the current browser tab and protects all Canvas API reads and actions from unrelated local processes. Semantic events and Observer cursors stay in the repository's ignored `.repo-canvas/` directory. Model calls use existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters only parse their local journals; they do not copy credentials or call those providers. No API key is copied into the project.
 
 ## Offline installation
 

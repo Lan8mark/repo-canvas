@@ -115,8 +115,9 @@ export class CodexObserver {
       const baseline = !providerKnown;
       const root = adapter.id === "codex" ? this.sessionsRoot : undefined;
       for (const file of adapter.listFiles(root)) {
+        const known = this.state.sessions[path.resolve(file)];
         let meta;
-        try { meta = adapter.readMeta(file, root); } catch { continue; }
+        try { meta = known?.meta || adapter.readMeta(file, root); } catch { continue; }
         if (!meta) continue;
         const session = this.ensureSession(file, meta, adapter, baseline);
         session.provider = adapter.id;
@@ -234,8 +235,15 @@ export class CodexObserver {
     for (const [file, session] of Object.entries(this.state.sessions)) {
       if (!session.relevant || !fs.existsSync(file)) continue;
       const adapter = sessionAdapter(session.provider || "codex");
-      const delta = readAppendedRecords(file, session.offset);
+      const delta = readAppendedRecords(file, session.offset, {
+        discardingOversizedRecord: Boolean(session.discardingOversizedRecord),
+      });
       session.offset = delta.offset;
+      session.discardingOversizedRecord = delta.discardingOversizedRecord;
+      if (delta.skippedOversizedRecords) {
+        session.skippedOversizedRecords = (session.skippedOversizedRecords || 0) + delta.skippedOversizedRecords;
+        activityError(`Observer skipped ${delta.skippedOversizedRecords} oversized journal record(s) for ${session.meta.id || "unknown session"}`);
+      }
       for (const record of delta.records) for (const signal of adapter.signals(record)) this.handleSignal(session, signal);
     }
     await this.runDue();

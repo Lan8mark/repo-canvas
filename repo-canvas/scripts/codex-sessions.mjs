@@ -48,25 +48,80 @@ export function readSessionMeta(file) {
   }
 }
 
-export function readAppendedRecords(file, offset = 0) {
+export function readAppendedRecords(file, offset = 0, options = {}) {
   const size = fs.statSync(file).size;
-  if (size <= offset) return { records: [], offset: size };
+  const start = Math.max(0, Math.min(Number.isInteger(offset) ? offset : 0, size));
+  const maxBytes = positiveInteger(options.maxBytes, 4 * 1024 * 1024, "maxBytes");
+  const maxRecordBytes = positiveInteger(options.maxRecordBytes, 1024 * 1024, "maxRecordBytes");
+  const maxRecords = positiveInteger(options.maxRecords, 1_000, "maxRecords");
+  if (maxBytes < maxRecordBytes) throw new Error("maxBytes must be greater than or equal to maxRecordBytes");
+  if (size <= start) {
+    return {
+      records: [], offset: size, bytesRead: 0, skippedOversizedRecords: 0,
+      discardingOversizedRecord: Boolean(options.discardingOversizedRecord),
+    };
+  }
+
+  const length = Math.min(size - start, maxBytes);
   const descriptor = fs.openSync(file, "r");
   try {
-    const buffer = Buffer.alloc(size - offset);
-    fs.readSync(descriptor, buffer, 0, buffer.length, offset);
-    const lastNewline = buffer.lastIndexOf(0x0a);
-    if (lastNewline < 0) return { records: [], offset };
-    const complete = buffer.subarray(0, lastNewline + 1).toString("utf8");
+    const buffer = Buffer.allocUnsafe(length);
+    const bytesRead = fs.readSync(descriptor, buffer, 0, length, start);
     const records = [];
-    for (const line of complete.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      try { records.push(JSON.parse(line)); } catch { /* retry incomplete/corrupt lines on next store validation path */ }
+    let lineStart = 0;
+    let consumed = 0;
+    let linesSeen = 0;
+    let skippedOversizedRecords = 0;
+    let discardingOversizedRecord = Boolean(options.discardingOversizedRecord);
+
+    if (discardingOversizedRecord) {
+      const newline = buffer.indexOf(0x0a, 0);
+      if (newline < 0) {
+        return {
+          records, offset: start + bytesRead, bytesRead, skippedOversizedRecords,
+          discardingOversizedRecord: true,
+        };
+      }
+      lineStart = newline + 1;
+      consumed = lineStart;
+      discardingOversizedRecord = false;
     }
-    return { records, offset: offset + lastNewline + 1 };
+
+    while (linesSeen < maxRecords) {
+      const newline = buffer.indexOf(0x0a, lineStart);
+      if (newline < 0) break;
+      let lineEnd = newline;
+      if (lineEnd > lineStart && buffer[lineEnd - 1] === 0x0d) lineEnd -= 1;
+      const lineLength = lineEnd - lineStart;
+      if (lineLength > maxRecordBytes) {
+        skippedOversizedRecords += 1;
+      } else if (lineLength > 0) {
+        try { records.push(JSON.parse(buffer.subarray(lineStart, lineEnd).toString("utf8"))); }
+        catch { /* malformed complete records are ignored, matching the previous parser */ }
+      }
+      linesSeen += 1;
+      lineStart = newline + 1;
+      consumed = lineStart;
+    }
+
+    if (linesSeen < maxRecords && bytesRead - lineStart > maxRecordBytes) {
+      skippedOversizedRecords += 1;
+      consumed = bytesRead;
+      discardingOversizedRecord = true;
+    }
+
+    return {
+      records, offset: start + consumed, bytesRead, skippedOversizedRecords, discardingOversizedRecord,
+    };
   } finally {
     fs.closeSync(descriptor);
   }
+}
+
+function positiveInteger(value, fallback, label) {
+  const parsed = value === undefined ? fallback : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${label} must be a positive integer`);
+  return parsed;
 }
 
 function canonical(value) {

@@ -40,6 +40,77 @@ test("large Codex metadata lines and repository filtering remain reliable", () =
   assert.equal(sessions.sessionBelongsToRepository({ ...meta, originator: "codex_sdk_ts" }, root), false);
 });
 
+test("journal reads stay bounded, resume in order, and discard oversized records once", () => {
+  const file = path.join(sessionsRoot, "rollout-bounded.jsonl");
+  const lines = Array.from({ length: 6 }, (_, index) => JSON.stringify({ index, text: "x".repeat(48) }));
+  fs.writeFileSync(file, `${lines.join("\n")}\n`);
+
+  let offset = 0;
+  const seen = [];
+  for (let pass = 0; pass < 6 && seen.length < lines.length; pass += 1) {
+    const delta = sessions.readAppendedRecords(file, offset, { maxBytes: 256, maxRecordBytes: 128, maxRecords: 2 });
+    assert.ok(delta.bytesRead <= 256);
+    assert.ok(delta.records.length <= 2);
+    assert.ok(delta.offset > offset);
+    offset = delta.offset;
+    seen.push(...delta.records.map((record) => record.index));
+  }
+  assert.deepEqual(seen, [0, 1, 2, 3, 4, 5]);
+
+  const oversized = path.join(sessionsRoot, "rollout-oversized.jsonl");
+  fs.writeFileSync(oversized, `${"x".repeat(700)}\n${JSON.stringify({ index: "after" })}\n`);
+  offset = 0;
+  let discardingOversizedRecord = false;
+  const recovered = [];
+  let skipped = 0;
+  for (let pass = 0; pass < 8 && !recovered.length; pass += 1) {
+    const delta = sessions.readAppendedRecords(oversized, offset, {
+      maxBytes: 256, maxRecordBytes: 128, maxRecords: 2, discardingOversizedRecord,
+    });
+    assert.ok(delta.bytesRead <= 256);
+    offset = delta.offset;
+    discardingOversizedRecord = delta.discardingOversizedRecord;
+    skipped += delta.skippedOversizedRecords;
+    recovered.push(...delta.records);
+  }
+  assert.equal(skipped, 1);
+  assert.deepEqual(recovered, [{ index: "after" }]);
+  assert.equal(offset, fs.statSync(oversized).size);
+
+  const partial = path.join(sessionsRoot, "rollout-partial.jsonl");
+  const partialRecord = JSON.stringify({ index: "partial", text: "kept" });
+  fs.writeFileSync(partial, partialRecord);
+  const waiting = sessions.readAppendedRecords(partial, 0, { maxBytes: 256, maxRecordBytes: 128, maxRecords: 2 });
+  assert.deepEqual(waiting.records, []);
+  assert.equal(waiting.offset, 0, "a normal incomplete record must wait for its newline");
+  fs.appendFileSync(partial, "\n");
+  const completed = sessions.readAppendedRecords(partial, waiting.offset, { maxBytes: 256, maxRecordBytes: 128, maxRecords: 2 });
+  assert.deepEqual(completed.records, [{ index: "partial", text: "kept" }]);
+  assert.equal(completed.offset, fs.statSync(partial).size);
+});
+
+test("observer reuses persisted session metadata instead of rereading full journals", async () => {
+  const file = path.join(sessionsRoot, "rollout-meta-cache.jsonl");
+  fs.writeFileSync(file, "");
+  let metadataReads = 0;
+  const adapter = {
+    id: "codex",
+    listFiles: () => [file],
+    readMeta: () => { metadataReads += 1; return { id: "cached-session", cwd: root, originator: "codex_desktop" }; },
+    belongsToRepository: () => true,
+    signals: () => [],
+    locator: () => ({ kind: "codex-app", id: "cached-session", cwd: root }),
+  };
+  const observer = new CodexObserver({
+    config: { enabled: true, repoRoot: root, providers: ["codex"], pollMs: 250 },
+    state: { version: 2, initializedProviders: [], sessions: {} },
+    adapters: [adapter], runner: async () => { throw new Error("runner should not be called"); },
+  });
+  await observer.tick();
+  await observer.tick();
+  assert.equal(metadataReads, 1);
+});
+
 test("observer publishes immediately, classifies deltas, and removes concepts only at completion", async () => {
   emit("area.upsert", { id: "core", title: "Core", note: "", order: 1 });
   emit("entity.upsert", {

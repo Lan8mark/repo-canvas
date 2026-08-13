@@ -358,14 +358,27 @@ test("loopback server guards navigation, reports port collision, and stops", asy
     stdio: ["ignore", "pipe", "pipe"],
   });
   t.after(() => { if (server.exitCode === null) server.kill("SIGTERM"); });
-  await waitForOutput(server, /listening at/);
+  const startedOutput = await waitForOutput(server, /listening at/);
+  const apiToken = startedOutput.match(/#token=([A-Za-z0-9_-]{43})/)?.[1];
+  assert.ok(apiToken, `Server did not print a per-launch API token: ${startedOutput}`);
 
   const badHost = await request(port, { headers: { Host: `attacker.example:${port}` } });
   assert.equal(badHost.status, 403);
 
-  const state = await request(port, { path: "/api/state", headers: { Host: `127.0.0.1:${port}` } });
+  const unauthorized = await request(port, { path: "/api/state", headers: { Host: `127.0.0.1:${port}` } });
+  assert.equal(unauthorized.status, 401);
+
+  const wrongToken = await request(port, {
+    path: "/api/state",
+    headers: { Host: `127.0.0.1:${port}`, "X-Repo-Canvas-Token": "x".repeat(43) },
+  });
+  assert.equal(wrongToken.status, 401);
+
+  const authHeaders = { Host: `127.0.0.1:${port}`, "X-Repo-Canvas-Token": apiToken };
+
+  const state = await request(port, { path: "/api/state", headers: authHeaders });
   assert.equal(state.status, 200);
-  const revision = await request(port, { path: "/api/revision", headers: { Host: `127.0.0.1:${port}` } });
+  const revision = await request(port, { path: "/api/revision", headers: authHeaders });
   assert.equal(revision.status, 200);
   assert.equal(revision.json.revision, state.json.revision);
   const payload = JSON.stringify({
@@ -373,7 +386,7 @@ test("loopback server guards navigation, reports port collision, and stops", asy
     canvasRevision: state.json.revision,
   });
   const commonHeaders = {
-    Host: `127.0.0.1:${port}`,
+    ...authHeaders,
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(payload),
   };
@@ -421,7 +434,7 @@ test("loopback server guards navigation, reports port collision, and stops", asy
   });
   assert.equal(layout.status, 201, layout.text);
   assert.equal(layout.json.saved, 2);
-  const movedState = await request(port, { path: "/api/state", headers: { Host: `127.0.0.1:${port}` } });
+  const movedState = await request(port, { path: "/api/state", headers: authHeaders });
   assert.deepEqual([movedState.json.areas[0].x, movedState.json.areas[0].y], [180, 220]);
   assert.deepEqual([movedState.json.entities[0].x, movedState.json.entities[0].y], [260, 340]);
   const staleLayout = await request(port, {
