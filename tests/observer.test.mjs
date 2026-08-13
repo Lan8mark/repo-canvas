@@ -12,6 +12,7 @@ process.env.REPO_CANVAS_ROOT = root;
 process.env.REPO_CANVAS_DATA_DIR = path.join(root, ".repo-canvas");
 
 const store = await import("../repo-canvas/scripts/canvas-store.mjs");
+const schema = await import("../repo-canvas/scripts/canvas-schema.mjs");
 const sessions = await import("../repo-canvas/scripts/codex-sessions.mjs");
 const semantic = await import("../repo-canvas/scripts/semantic-model.mjs");
 const { CodexObserver } = await import("../repo-canvas/scripts/observer.mjs");
@@ -105,4 +106,17 @@ test("architect rejects relations to entities removed by the same refresh", () =
     relations: [{ id: "bad", from: "legacy", to: "legacy", label: "self", status: "existing" }],
     removedAreaIds: [], removedEntityIds: ["legacy"], removedRelationIds: [],
   }), /Unknown relation endpoint/);
+});
+
+test("completed observer work may remain provisional when no semantic target was established", () => {
+  const [event] = semantic.observerEvents({
+    workTitle: "Repository-wide review", workSummary: "No single semantic target was established",
+    workStatus: "done", targetEntityIds: [], entityChanges: [], relationChanges: [],
+  }, {
+    workId: "unmapped-review", final: true,
+    session: { kind: "codex-app", id: "unmapped-session", cwd: root },
+  });
+  assert.equal(event.payload.provisional, true);
+  assert.deepEqual(event.payload.targets, []);
+  assert.deepEqual(schema.validateEvent(event), []);
 });

@@ -47,7 +47,7 @@
     <section class="canvas-shell">
       <header class="canvas-header">
         <span><small>АРХИТЕКТУРА И ТЕКУЩАЯ РАБОТА</small><h1 id="canvasTitle">Весь проект</h1></span>
-        <nav><button id="zoomOut" type="button" aria-label="Уменьшить">−</button><button id="fitView" type="button">Показать всё</button><button id="zoomIn" type="button" aria-label="Увеличить">+</button></nav>
+        <nav><button id="zoomOut" type="button" aria-label="Уменьшить">−</button><button id="fitView" type="button">Показать всё</button><button id="zoomIn" type="button" aria-label="Увеличить">+</button><button id="legendToggle" class="legend-toggle" type="button" aria-controls="canvasLegend" aria-expanded="false"><span>Легенда</span></button></nav>
       </header>
       <div id="viewport" class="viewport" aria-label="Semantic repository canvas">
         <div id="world" class="world">
@@ -58,6 +58,19 @@
         </div>
         <p id="emptyState" class="empty-state">Смысловая карта проекта пока не построена.</p>
         <span class="canvas-hint">тяните фон · колесо меняет масштаб · двойной клик по работе открывает сессию</span>
+        <aside id="canvasLegend" class="canvas-legend" aria-label="Легенда карты" hidden>
+          <header><span><small>ЛЕГЕНДА</small><strong>Как читать карту</strong></span><button id="legendClose" type="button" aria-label="Закрыть легенду">×</button></header>
+          <div class="legend-list">
+            <div><i class="legend-mark area"></i><span><strong>Область</strong><small>смысловой раздел проекта</small></span></div>
+            <div><i class="legend-mark entity"></i><span><strong>Сущность</strong><small>модуль, сервис, хранилище или ответственность</small></span></div>
+            <div><i class="legend-mark work"><b></b></i><span><strong>Работа агента</strong><small>двойной клик открывает связанную сессию</small></span></div>
+            <div><i class="legend-mark active"><b></b></i><span><strong>Активный маркер</strong><small>над этой сущностью сейчас работают</small></span></div>
+            <div><i class="legend-mark relation"></i><span><strong>Связь</strong><small>подпись на линии объясняет поток или зависимость</small></span></div>
+          </div>
+          <div class="legend-statuses" aria-label="Статусы сущностей">
+            <span><i class="operational"></i>работает</span><span><i class="disabled"></i>отключено</span><span><i class="problem"></i>проблема</span><span><i class="planned"></i>планируется</span>
+          </div>
+        </aside>
       </div>
     </section>
   </main>

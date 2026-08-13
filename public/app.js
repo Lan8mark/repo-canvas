@@ -10,6 +10,7 @@ const elements = {
   activityList: $("#activityList"), lastSync: $("#lastSync"), canvasTitle: $("#canvasTitle"),
   viewport: $("#viewport"), world: $("#world"), areaLayer: $("#areaLayer"), edgeLayer: $("#edgeLayer"),
   entityLayer: $("#entityLayer"), workLayer: $("#workLayer"), emptyState: $("#emptyState"), toast: $("#toast"),
+  legend: $("#canvasLegend"), legendToggle: $("#legendToggle"), legendClose: $("#legendClose"),
 };
 
 const ENTITY_W = 244;
@@ -36,6 +37,7 @@ let currentLayout = null;
 let layoutDrag = null;
 let layoutSaving = false;
 let suppressEntityClickUntil = 0;
+const collapsedAreas = new Set();
 const RELATION_CAPTION_FRAME_MS = 1000 / 60;
 
 function escapeHtml(value) {
@@ -314,11 +316,18 @@ function renderWork(positions) {
 
 function renderTree() {
   elements.projectCount.textContent = String(snapshot.entities.length);
-  elements.projectTree.innerHTML = snapshot.areas.map((area) => {
+  elements.projectTree.innerHTML = snapshot.areas.map((area, index) => {
     const entities = snapshot.entities.filter((entity) => entity.areaId === area.id);
-    return `<section class="tree-area"><button data-area="${escapeHtml(area.id)}" class="${selectedArea === area.id ? "is-active" : ""}" type="button"><span><strong>${escapeHtml(area.title)}</strong><small>${entities.length} сущностей</small></span><b>›</b></button><div>${entities.map((entity) => `<button data-entity="${escapeHtml(entity.id)}" type="button"><i class="${escapeHtml(entity.status)}"></i>${escapeHtml(entity.label)}</button>`).join("")}</div></section>`;
+    const collapsed = collapsedAreas.has(area.id);
+    const listId = `tree-area-${index}`;
+    return `<section class="tree-area ${collapsed ? "is-collapsed" : ""}"><header><button data-area="${escapeHtml(area.id)}" class="tree-area-main ${selectedArea === area.id ? "is-active" : ""}" type="button"><span><strong>${escapeHtml(area.title)}</strong><small>${entities.length} сущностей</small></span></button><button data-area-toggle="${escapeHtml(area.id)}" class="tree-area-toggle" type="button" aria-controls="${listId}" aria-expanded="${String(!collapsed)}" aria-label="${collapsed ? "Раскрыть" : "Свернуть"} ${escapeHtml(area.title)}"><b>›</b></button></header><div id="${listId}" ${collapsed ? "hidden" : ""}>${entities.map((entity) => `<button data-entity="${escapeHtml(entity.id)}" type="button"><i class="${escapeHtml(entity.status)}"></i>${escapeHtml(entity.label)}</button>`).join("")}</div></section>`;
   }).join("");
   elements.projectTree.querySelectorAll("[data-area]").forEach((button) => button.addEventListener("click", () => selectArea(button.dataset.area)));
+  elements.projectTree.querySelectorAll("[data-area-toggle]").forEach((button) => button.addEventListener("click", () => {
+    const id = button.dataset.areaToggle;
+    if (collapsedAreas.has(id)) collapsedAreas.delete(id); else collapsedAreas.add(id);
+    renderTree();
+  }));
   elements.projectTree.querySelectorAll("[data-entity]").forEach((button) => button.addEventListener("click", () => showPassport(snapshot.entities.find((item) => item.id === button.dataset.entity))));
 }
 
@@ -399,6 +408,12 @@ function fitView() {
   const scale = Math.min(1.2, Math.max(.015, Math.min(rect.width / (box.width + 90), rect.height / (box.height + 90)) * .94));
   transform = { scale, x: (rect.width - box.width * scale) / 2 - box.x * scale, y: (rect.height - box.height * scale) / 2 - box.y * scale };
   updateTransform();
+}
+
+function setLegendOpen(open) {
+  elements.legend.hidden = !open;
+  elements.legendToggle.setAttribute("aria-expanded", String(open));
+  elements.legendToggle.classList.toggle("is-active", open);
 }
 
 function showToast(message, error = false) {
@@ -505,9 +520,11 @@ async function poll(force = false) {
 
 elements.allProject.addEventListener("click", () => selectArea("all"));
 elements.closePassport.addEventListener("click", () => { selectedEntity = null; elements.passport.hidden = true; });
-$("#fitView").addEventListener("click", fitView);
+$("#fitView").addEventListener("click", () => selectArea("all"));
 $("#zoomIn").addEventListener("click", () => zoomAtViewportCenter(1.16));
 $("#zoomOut").addEventListener("click", () => zoomAtViewportCenter(1 / 1.16));
+elements.legendToggle.addEventListener("click", () => setLegendOpen(elements.legend.hidden));
+elements.legendClose.addEventListener("click", () => setLegendOpen(false));
 elements.viewport.addEventListener("wheel", (event) => { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY > 0 ? .9 : 1.1); }, { passive: false });
 elements.viewport.addEventListener("pointerdown", (event) => { if (event.button !== 0 || event.target.closest("button")) return; window.getSelection()?.removeAllRanges(); pan = { x: event.clientX, y: event.clientY, tx: transform.x, ty: transform.y }; elements.viewport.setPointerCapture(event.pointerId); elements.viewport.classList.add("is-panning"); });
 elements.viewport.addEventListener("pointermove", (event) => { if (!pan) return; transform.x = pan.tx + event.clientX - pan.x; transform.y = pan.ty + event.clientY - pan.y; updateTransform(); });

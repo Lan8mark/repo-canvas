@@ -136,7 +136,7 @@ export function observerEvents(decision, context) {
     actor: "observer",
     payload: {
       id: context.workId, title: decision.workTitle || "Agent work", status: decision.workStatus,
-      targets, note: decision.workSummary || "", provisional: targets.length === 0 && decision.workStatus === "active",
+      targets, note: decision.workSummary || "", provisional: targets.length === 0,
       session: context.session,
     },
   });
