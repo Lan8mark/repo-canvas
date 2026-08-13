@@ -132,6 +132,38 @@ export function appendEvent(event, { expectedRevision = null } = {}) {
   });
 }
 
+export function appendEvents(events, { expectedRevision = null } = {}) {
+  if (!Array.isArray(events) || events.length === 0) throw new Error("events must be a non-empty array");
+  for (const event of events) {
+    const validation = validateEvent(event);
+    if (validation.length) throw new Error(`Invalid event: ${validation.join("; ")}`);
+  }
+
+  return withStoreLock(() => {
+    const current = parseStoreContent(fs.readFileSync(eventsFile, "utf8"));
+    const errors = [...current.parseErrors, ...current.validationErrors];
+    if (errors.length) throw new Error("Cannot append while the Repo Canvas store is invalid; run check and repair first");
+    if (expectedRevision !== null && current.events.length !== expectedRevision) {
+      const error = new Error(`Canvas changed from revision ${expectedRevision} to ${current.events.length}`);
+      error.code = "STALE_REVISION";
+      error.currentRevision = current.events.length;
+      throw error;
+    }
+    const candidate = [...current.events, ...events].map((item, index) => ({ event: item, line: index + 1 }));
+    const firstNewLine = current.events.length + 1;
+    const candidateErrors = validateEventSequence(candidate).filter((error) => error.line >= firstNewLine);
+    if (candidateErrors.length) throw new Error(`Invalid event sequence: ${candidateErrors.map((error) => error.message).join("; ")}`);
+    const descriptor = fs.openSync(eventsFile, "a", 0o600);
+    try {
+      fs.writeSync(descriptor, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, null, "utf8");
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    return events;
+  });
+}
+
 function parseStoreContent(content) {
   const lines = content.split(/\r?\n/);
   const parsed = [];
@@ -225,9 +257,17 @@ function entityKey(taskId, id) {
   return `${taskKey(taskId)}::${String(id)}`;
 }
 
+function naturalCompare(a, b) {
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+}
+
 function activityLabel(event) {
   const payload = event.payload || {};
   if (event.type === "activity.log") return payload.message || "Activity recorded";
+  if (event.type === "area.upsert") return `Area ${payload.title || payload.id} updated`;
+  if (event.type === "entity.upsert") return `${payload.label || payload.id} → ${payload.status || "updated"}`;
+  if (event.type === "relation.upsert") return `Relation ${payload.from} → ${payload.to}`;
+  if (event.type === "work.upsert") return `Work ${payload.title || payload.id} → ${payload.status || "updated"}`;
   if (event.type === "task.upsert") return `Task ${payload.title || payload.id} → ${payload.status || "updated"}`;
   if (event.type === "node.upsert") return `${payload.label || payload.id} → ${payload.status || "updated"}`;
   if (event.type === "edge.upsert") return `Connection ${payload.from} → ${payload.to}`;
@@ -237,6 +277,10 @@ function activityLabel(event) {
 }
 
 export function reduceEvents(events, errors = []) {
+  const areas = new Map();
+  const entities = new Map();
+  const relations = new Map();
+  const work = new Map();
   const tasks = new Map();
   const nodes = new Map();
   const edges = new Map();
@@ -246,6 +290,26 @@ export function reduceEvents(events, errors = []) {
   for (const event of events) {
     const payload = event.payload || {};
     const currentTaskId = taskKey(event.taskId || payload.taskId || payload.id);
+
+    if (event.type === "area.upsert") {
+      const id = String(payload.id);
+      areas.set(id, { ...(areas.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
+    }
+
+    if (event.type === "entity.upsert") {
+      const id = String(payload.id);
+      entities.set(id, { ...(entities.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
+    }
+
+    if (event.type === "relation.upsert") {
+      const id = String(payload.id || `${payload.from}->${payload.to}`);
+      relations.set(id, { ...(relations.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
+    }
+
+    if (event.type === "work.upsert") {
+      const id = String(payload.id);
+      work.set(id, { ...(work.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
+    }
 
     if (event.type === "task.upsert") {
       const id = String(payload.id || currentTaskId);
@@ -325,6 +389,12 @@ export function reduceEvents(events, errors = []) {
   });
   const edgeList = [...edges.values()];
   const directiveList = [...directives.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const areaList = [...areas.values()].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || naturalCompare(a.title, b.title));
+  const entityList = [...entities.values()].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || naturalCompare(a.label, b.label));
+  const relationList = [...relations.values()];
+  const workList = [...work.values()].sort((a, b) => naturalCompare(a.title, b.title));
+  const activeWork = workList.filter((item) => ["active", "blocked", "planned"].includes(item.status));
+  const activeEntityIds = [...new Set(activeWork.filter((item) => item.status === "active").flatMap((item) => item.targets || []))];
 
   return {
     revision: events.length,
@@ -332,6 +402,12 @@ export function reduceEvents(events, errors = []) {
     parseErrors: errors.filter((error) => error.kind === "parse"),
     validationErrors: errors.filter((error) => error.kind !== "parse"),
     storeErrors: errors,
+    areas: areaList,
+    entities: entityList,
+    relations: relationList,
+    work: workList,
+    activeEntityIds,
+    semantic: areaList.length > 0 || entityList.length > 0,
     tasks: taskList,
     nodes: nodeList,
     edges: edgeList,
@@ -339,6 +415,9 @@ export function reduceEvents(events, errors = []) {
     pendingDirectives: directiveList.filter((directive) => directive.status === "pending"),
     activity: activity.slice(-80).reverse(),
     summary: {
+      areaCount: areaList.length,
+      entityCount: entityList.length,
+      activeWork: activeWork.filter((item) => item.status === "active").length,
       taskCount: taskList.length,
       activeTasks: taskList.filter((task) => task.status === "active").length,
       nodeCount: nodeList.length,
@@ -350,7 +429,15 @@ export function reduceEvents(events, errors = []) {
   };
 }
 
+let snapshotCache = null;
+
 export function getSnapshot() {
+  ensureStoreUnlocked();
+  const stat = fs.statSync(eventsFile);
+  const signature = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+  if (snapshotCache?.signature === signature) return snapshotCache.value;
   const { events, errors } = readEvents();
-  return reduceEvents(events, errors);
+  const value = reduceEvents(events, errors);
+  snapshotCache = { signature, value };
+  return value;
 }

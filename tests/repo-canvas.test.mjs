@@ -8,9 +8,152 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { resolveSessionTarget } from "../repo-canvas/scripts/session-locator.mjs";
+import { reduceEvents } from "../repo-canvas/scripts/canvas-store.mjs";
+import { evaluateHook } from "../repo-canvas/scripts/canvas-hook.mjs";
+import { anchoredZoomTransform, boxesOverlap, captionAwareDetour, captionShapesOverlap, chooseFloatingCaption, connectionAnchors, crossAreaDetour, packAreaRectangles, paddedBox, placeRelationLabel, relationCurve, sampleRelationCurve } from "../public/canvas-layout.js";
+
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(repositoryRoot, "repo-canvas", "scripts", "canvas.mjs");
 const writer = path.join(repositoryRoot, "tests", "concurrent-writer.mjs");
+
+test("semantic relation labels avoid headers, cards, and each other", () => {
+  const a = { x: 100, y: 140 };
+  const b = { x: 520, y: 140 };
+  const anchors = connectionAnchors(a, b);
+  assert.deepEqual(anchors.from, { x: 344, y: 201 });
+  assert.deepEqual(anchors.to, { x: 520, y: 201 });
+
+  const header = { x: 405, y: 170, width: 120, height: 38 };
+  const first = placeRelationLabel("передаёт результат", anchors.from, anchors.to, [header]);
+  assert.ok(first, "Expected a free caption position");
+  assert.equal(boxesOverlap(first.box, header), false);
+  const second = placeRelationLabel("следующая связь", anchors.from, anchors.to, [header, first.box]);
+  assert.ok(second, "Expected a second non-overlapping caption position");
+  assert.equal(boxesOverlap(second.box, first.box), false);
+});
+
+test("floating relation captions stay on visible curve segments and separate at crossings", () => {
+  const firstCurve = relationCurve({ x: 0, y: 0 }, { x: 600, y: 400 }, { laneOffset: -34 });
+  const secondCurve = relationCurve({ x: 0, y: 400 }, { x: 600, y: 0 }, { laneOffset: 34 });
+  const viewport = { x: 170, y: 80, width: 260, height: 240 };
+  const first = chooseFloatingCaption({
+    samples: sampleRelationCurve(firstCurve), currentProgress: .5, width: 110, height: 22, viewport,
+  });
+  assert.ok(first);
+  const second = chooseFloatingCaption({
+    samples: sampleRelationCurve(secondCurve), currentProgress: .5, width: 110, height: 22, viewport, occupied: [first.box],
+  });
+  assert.ok(second);
+  assert.equal(captionShapesOverlap(first.box, second.box), false);
+  assert.notEqual(first.angle, 0);
+  assert.notEqual(second.angle, 0);
+
+  const cropped = chooseFloatingCaption({
+    samples: sampleRelationCurve(firstCurve), currentProgress: .2, width: 80, height: 22,
+    viewport: { x: 420, y: 330, width: 170, height: 90 },
+  });
+  assert.ok(cropped);
+  assert.ok(cropped.progress > .65, "Caption should slide from an off-screen start to the visible tail");
+});
+
+test("floating captions never fall back onto nodes", () => {
+  const curve = relationCurve({ x: 0, y: 100 }, { x: 500, y: 100 });
+  const placement = chooseFloatingCaption({
+    samples: sampleRelationCurve(curve), currentProgress: .5, width: 120, height: 22,
+    viewport: { x: 0, y: 0, width: 500, height: 220 },
+    obstacles: [{ x: 0, y: 0, width: 500, height: 220 }],
+  });
+  assert.equal(placement, null);
+});
+
+test("zoom keeps the selected viewport point over the same world point", () => {
+  const current = { x: -320, y: 140, scale: .5 };
+  const anchor = { x: 760, y: 410 };
+  const worldBefore = { x: (anchor.x - current.x) / current.scale, y: (anchor.y - current.y) / current.scale };
+  const next = anchoredZoomTransform(current, 1.1, anchor);
+  assert.equal((anchor.x - next.x) / next.scale, worldBefore.x);
+  assert.equal((anchor.y - next.y) / next.scale, worldBefore.y);
+});
+
+test("short gaps get a rounded caption-aware detour outside adjacent nodes", () => {
+  const detour = captionAwareDetour({ x: 20, y: 40 }, { x: 284, y: 40 }, 96);
+  assert.ok(detour);
+  assert.equal(detour.from.y, 162);
+  assert.ok(detour.waypoints[0].y > detour.from.y);
+  assert.equal(detour.waypoints[0].y, detour.waypoints[1].y);
+  const route = relationCurve(detour.from, detour.to, { waypoints: detour.waypoints });
+  assert.match(route.d, / Q /, "Detour corners should stay rounded");
+});
+
+test("cross-area routes leave through row lanes instead of cutting through sibling nodes", () => {
+  const sourceArea = { x: 0, y: 0, width: 850, height: 600 };
+  const targetArea = { x: 924, y: 0, width: 850, height: 600 };
+  const source = { x: 48, y: 102 };
+  const target = { x: 972, y: 102 };
+  const route = crossAreaDetour(source, target, sourceArea, targetArea);
+  assert.ok(route);
+  assert.equal(route.from.y, source.y + 122);
+  assert.ok(route.waypoints[0].y > route.from.y);
+  assert.equal(route.waypoints[1].x, 887);
+  const sibling = paddedBox({ x: 318, y: 102 }, 244, 122, 0);
+  const samples = sampleRelationCurve(relationCurve(route.from, route.to, { waypoints: route.waypoints }));
+  assert.equal(samples.some((point) => point.x > sibling.x && point.x < sibling.x + sibling.width && point.y > sibling.y && point.y < sibling.y + sibling.height), false);
+});
+
+test("automatic area packing has no small-project cap or vertical overlap", () => {
+  const rectangles = Array.from({ length: 18 }, (_, index) => ({
+    id: `area-${index}`,
+    width: 850 + (index % 4) * 270,
+    height: 400 + (index % 7) * 714,
+  }));
+  const positions = packAreaRectangles(rectangles);
+  assert.equal(positions.size, 18);
+  const packed = [...positions.values()];
+  for (let index = 0; index < packed.length; index += 1) {
+    for (let other = index + 1; other < packed.length; other += 1) {
+      assert.equal(boxesOverlap(packed[index], packed[other]), false, `areas ${index} and ${other} overlap`);
+    }
+  }
+});
+
+test("semantic snapshot keeps hundreds of entities and relations without truncation", () => {
+  const event = (index, type, payload) => ({
+    v: 1,
+    id: `scale-${index}`,
+    ts: new Date(1_700_000_000_000 + index).toISOString(),
+    type,
+    actor: "scale-test",
+    taskId: null,
+    payload,
+  });
+  const events = [];
+  for (let area = 1; area <= 12; area += 1) {
+    events.push(event(events.length, "area.upsert", { id: `area-${area}`, title: `Area ${area}`, order: area }));
+  }
+  for (let entity = 1; entity <= 240; entity += 1) {
+    events.push(event(events.length, "entity.upsert", {
+      id: `entity-${entity}`,
+      areaId: `area-${Math.ceil(entity / 20)}`,
+      label: `Entity ${entity}`,
+      status: "operational",
+    }));
+  }
+  for (let relation = 1; relation <= 283; relation += 1) {
+    events.push(event(events.length, "relation.upsert", {
+      id: `relation-${relation}`,
+      from: `entity-${((relation - 1) % 239) + 1}`,
+      to: `entity-${((relation - 1) % 239) + 2}`,
+      label: `Flow ${relation}`,
+      status: "existing",
+    }));
+  }
+  const snapshot = reduceEvents(events);
+  assert.equal(snapshot.areas.length, 12);
+  assert.equal(snapshot.entities.length, 240);
+  assert.equal(snapshot.relations.length, 283);
+  assert.deepEqual(snapshot.entities.slice(0, 4).map((item) => item.label), ["Entity 1", "Entity 2", "Entity 3", "Entity 4"]);
+});
 
 function makeRepository(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "repo-canvas-test-"));
@@ -96,23 +239,75 @@ function request(port, { method = "GET", path: requestPath = "/api/health", head
   });
 }
 
-test("nested invocation resolves the Git root and validates statuses", (t) => {
+test("nested invocation resolves the Git root and validates semantic statuses", (t) => {
   const root = makeRepository(t);
   const nested = path.join(root, "src", "nested");
   fs.mkdirSync(nested, { recursive: true });
 
-  const task = runCli(root, ["task", "--id", "demo", "--title", "Demo", "--status", "active", "--actor", "codex"], { cwd: nested });
-  assert.equal(task.status, 0, task.stderr);
+  assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"], { cwd: nested }).status, 0);
   assert.ok(fs.existsSync(path.join(root, ".repo-canvas", "events.jsonl")));
   assert.ok(!fs.existsSync(path.join(nested, ".repo-canvas")));
 
-  const invalid = runCli(root, ["node", "--task", "demo", "--id", "bad", "--label", "Bad", "--status", "donne", "--actor", "codex"]);
+  const invalid = runCli(root, ["entity", "--id", "bad", "--area", "core", "--label", "Bad", "--status", "donne", "--actor", "codex"]);
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /unsupported value 'donne'/);
 
   const check = runCli(root, ["check"]);
   assert.equal(check.status, 0, check.stderr);
   assert.match(check.stdout, /revision 1/);
+});
+
+test("session locators stay structured and Codex Desktop binds automatically", (t) => {
+  const root = makeRepository(t);
+  assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"]).status, 0);
+  assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Module", "--status", "operational"]).status, 0);
+  const threadId = "019ff2ac-1bcb-7103-b395-cfe4e749a251";
+  const node = runCli(root, ["work", "--id", "demo", "--title", "Demo work", "--targets", "module", "--status", "active", "--actor", "codex"], {
+    env: { CODEX_THREAD_ID: threadId, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop" },
+  });
+  assert.equal(node.status, 0, node.stderr);
+  const snapshot = JSON.parse(runCli(root, ["snapshot"]).stdout);
+  assert.deepEqual(snapshot.work[0].session, {
+    kind: "codex-app",
+    id: threadId,
+    cwd: root,
+  });
+
+  assert.deepEqual(resolveSessionTarget({ kind: "codex-app", id: threadId }), {
+    mode: "external",
+    uri: `codex://threads/${threadId}`,
+    exact: true,
+    label: "Codex",
+  });
+  assert.equal(resolveSessionTarget({ kind: "kimi-app", title: "Probe" }).exact, false);
+  assert.equal(resolveSessionTarget({ kind: "kimi-cli", id: "session_123" }).command, "kimi --session session_123");
+  assert.equal(resolveSessionTarget({ kind: "unsupported", id: "x" }), null);
+  assert.throws(() => resolveSessionTarget({ kind: "codex-app", id: "x; calc.exe" }), /Invalid codex-app session id/);
+});
+
+test("verified work start rejects bad targets and arms the write hook", (t) => {
+  const root = makeRepository(t);
+  assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"]).status, 0);
+  assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Module", "--status", "operational"]).status, 0);
+  const threadId = "019ff840-f9fd-7780-afba-203151d1bf7b";
+  const env = { CODEX_THREAD_ID: threadId, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop" };
+  const unknown = runCli(root, ["work", "start", "--id", "demo", "--title", "Demo", "--targets", "missing", "--note", "Real intent", "--actor", "codex"], { env });
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unknown work targets: missing/);
+  assert.match(runCli(root, ["check"]).stdout, /revision 2/);
+
+  const started = runCli(root, ["work", "start", "--id", "demo", "--title", "Demo", "--targets", "module", "--note", "Real intent", "--actor", "codex"], { env });
+  assert.equal(started.status, 0, started.stderr);
+  assert.equal(JSON.parse(started.stdout).verified, true);
+  const guarded = runCli(root, ["work", "guard"], { env });
+  assert.equal(guarded.status, 0, guarded.stderr);
+
+  const snapshot = JSON.parse(runCli(root, ["snapshot"]).stdout);
+  assert.equal(evaluateHook({ hook_event_name: "PreToolUse", session_id: threadId }, snapshot), null);
+  const blocked = evaluateHook({ hook_event_name: "PreToolUse", session_id: "another-session" }, snapshot);
+  assert.equal(blocked.permissionDecision, "deny");
+  assert.match(blocked.permissionDecisionReason, /work start/);
+  assert.match(evaluateHook({ hook_event_name: "UserPromptSubmit" }, snapshot).additionalContext, /before the first product write/);
 });
 
 test("concurrent processes serialize complete event appends and reclaim an old dead lock", async (t) => {
@@ -168,10 +363,13 @@ test("repair previews and quarantines malformed JSON without hiding schema error
   assert.equal(runCli(root, ["check"]).status, 0);
 });
 
-test("loopback server rejects rebinding and CSRF, detects stale clicks, reports port collision, and stops", async (t) => {
+test("loopback server guards navigation, retires directives, reports port collision, and stops", async (t) => {
   const root = makeRepository(t);
-  assert.equal(runCli(root, ["task", "--id", "demo", "--title", "Demo", "--status", "active", "--actor", "codex"]).status, 0);
-  assert.equal(runCli(root, ["node", "--task", "demo", "--id", "module", "--label", "Module", "--status", "planned", "--actor", "codex"]).status, 0);
+  assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"]).status, 0);
+  assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Module", "--status", "operational"]).status, 0);
+  assert.equal(runCli(root, ["work", "--id", "demo", "--title", "Demo work", "--targets", "module", "--status", "planned", "--actor", "codex"], {
+    env: { CODEX_THREAD_ID: "", CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "" },
+  }).status, 0);
   const port = await freePort();
   const server = spawn(process.execPath, [cli, "start", "--root", root, "--port", String(port)], {
     cwd: root,
@@ -185,11 +383,11 @@ test("loopback server rejects rebinding and CSRF, detects stale clicks, reports 
 
   const state = await request(port, { path: "/api/state", headers: { Host: `127.0.0.1:${port}` } });
   assert.equal(state.status, 200);
+  const revision = await request(port, { path: "/api/revision", headers: { Host: `127.0.0.1:${port}` } });
+  assert.equal(revision.status, 200);
+  assert.equal(revision.json.revision, state.json.revision);
   const payload = JSON.stringify({
-    action: "explain",
-    taskId: "demo",
-    targetId: "module",
-    targetKind: "node",
+    workId: "demo",
     canvasRevision: state.json.revision,
   });
   const commonHeaders = {
@@ -199,27 +397,66 @@ test("loopback server rejects rebinding and CSRF, detects stale clicks, reports 
   };
   const csrf = await request(port, {
     method: "POST",
-    path: "/api/directives",
+    path: "/api/sessions/open",
     headers: { ...commonHeaders, Origin: "https://evil.example" },
     body: payload,
   });
   assert.equal(csrf.status, 403);
 
-  const accepted = await request(port, {
+  const unlinked = await request(port, {
     method: "POST",
-    path: "/api/directives",
+    path: "/api/sessions/open",
     headers: { ...commonHeaders, Origin: `http://127.0.0.1:${port}` },
     body: payload,
   });
-  assert.equal(accepted.status, 201, accepted.text);
+  assert.equal(unlinked.status, 422, unlinked.text);
 
+  const stalePayload = JSON.stringify({ workId: "demo", canvasRevision: state.json.revision - 1 });
   const stale = await request(port, {
     method: "POST",
+    path: "/api/sessions/open",
+    headers: {
+      ...commonHeaders,
+      "Content-Length": Buffer.byteLength(stalePayload),
+      Origin: `http://127.0.0.1:${port}`,
+    },
+    body: stalePayload,
+  });
+  assert.equal(stale.status, 409);
+
+  const retired = await request(port, {
+    method: "POST",
     path: "/api/directives",
     headers: { ...commonHeaders, Origin: `http://127.0.0.1:${port}` },
     body: payload,
   });
-  assert.equal(stale.status, 409);
+  assert.equal(retired.status, 410);
+
+  const layoutPayload = JSON.stringify({
+    canvasRevision: state.json.revision,
+    items: [
+      { kind: "area", id: "core", x: 180, y: 220 },
+      { kind: "entity", id: "module", x: 260, y: 340 },
+    ],
+  });
+  const layout = await request(port, {
+    method: "POST",
+    path: "/api/layout",
+    headers: { ...commonHeaders, "Content-Length": Buffer.byteLength(layoutPayload), Origin: `http://127.0.0.1:${port}` },
+    body: layoutPayload,
+  });
+  assert.equal(layout.status, 201, layout.text);
+  assert.equal(layout.json.saved, 2);
+  const movedState = await request(port, { path: "/api/state", headers: { Host: `127.0.0.1:${port}` } });
+  assert.deepEqual([movedState.json.areas[0].x, movedState.json.areas[0].y], [180, 220]);
+  assert.deepEqual([movedState.json.entities[0].x, movedState.json.entities[0].y], [260, 340]);
+  const staleLayout = await request(port, {
+    method: "POST",
+    path: "/api/layout",
+    headers: { ...commonHeaders, "Content-Length": Buffer.byteLength(layoutPayload), Origin: `http://127.0.0.1:${port}` },
+    body: layoutPayload,
+  });
+  assert.equal(staleLayout.status, 409);
 
   const second = spawn(process.execPath, [cli, "start", "--root", root, "--port", String(port)], {
     cwd: root,

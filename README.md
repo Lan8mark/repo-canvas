@@ -1,58 +1,51 @@
-# Repo Canvas
+# Repo Canvas 0.5
 
-Repo Canvas is a local, live map of repository work. Coding agents publish task/module checkpoints through a tiny CLI; the owner watches the board in a browser and can send `explain`, `correct`, `stop`, `reject`, or `rollback` directives back through the same project-local event log.
+A zero-dependency local semantic map for large repositories. It shows permanent project structure and overlays current agent work as small session-linked satellites.
 
-It is deliberately small: one dependency-free Node package, one foreground loopback server, one append-only JSONL store, and one repository instruction contract.
+## What the owner sees
 
-## Requirements
+- large Miro-like project areas;
+- persistent module and responsibility nodes;
+- meaningful runtime and data relations;
+- small planned, active, or blocked work satellites beside affected entities;
+- an active orbit on every entity currently being changed;
+- a compact entity passport and recent activity in the left rail;
+- owner layout editing: drag a node directly, or drag an area by its heading to move the whole block; positions persist in the shared map;
+- double-click navigation from work to the exact Codex/Claude session or terminal resume command.
 
-- Node.js 22 or newer.
-- An npm project and a Git working tree for the supported v1 bootstrap.
-- A local browser. Repo Canvas v1 never binds outside loopback.
+Repo Canvas does not control agents, index every file, run a daemon, or require a database.
 
-## Install from the packed artifact
+On Codex, the installed project hook reminds the agent on every prompt and blocks product edit tools until a separate verified `work start` has attached the current session to real entity ids. Approve the repository hook when Codex asks for trust, then open a fresh task so it is active from the first prompt. Other agents receive the same mandatory CLI contract through `AGENTS.md`; native hard guards depend on their hook support.
+
+## Hand-off to another person
+
+Download the latest kit from [GitHub Releases](https://github.com/m0ast-git/repo-canvas/releases), or send the two files inside it: `repo-canvas-0.5.0.tgz` and `INSTALL_WITH_AGENT.txt`.
+
+They copy both into an existing repository root, open a fresh coding-agent conversation there, attach or paste the text file, and ask the agent to install it. The text contains the complete bootstrap acceptance contract.
+
+## Manual installation
 
 ```text
-npm install --save-dev --save-exact ./repo-canvas-0.2.0.tgz
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.5.0.tgz
 npx --no-install repo-canvas init
-npm run canvas:start
+npm run repo-canvas:start
 ```
 
-Then open the exact URL printed by the server, normally `http://127.0.0.1:4173`.
+Node.js 22+ is required. The server binds to loopback only. `init` is idempotent and preserves existing owner instructions; conflicts stop with a concrete error.
 
-After registry publication the first two commands collapse to an exact-version bootstrap:
+## Semantic CLI
 
 ```text
-npx --yes repo-canvas@0.2.0 init
+npm run repo-canvas -- area --id knowledge --title "Knowledge base"
+npm run repo-canvas -- entity --id search --area knowledge --label "Standards search" --status operational --path src/search
+npm run repo-canvas -- relation --from search --to registry --label "queries"
+npm run repo-canvas -- work start --id improve-search --title "Improve matching" --targets search,registry --note "Tighten matching" --actor codex
+npm run repo-canvas -- snapshot
+npm run repo-canvas -- check
 ```
 
-Normal work always uses the locally pinned package:
+Legacy v0.3 task/node/edge events remain readable after upgrade, but new agents use area/entity/relation/work.
 
-```text
-npm run canvas -- snapshot
-npm run canvas -- directives
-npm run canvas -- check
-```
+## License
 
-`init` is idempotent. It adds three npm scripts, a marked block in `AGENTS.md`, the managed `repo-canvas/SKILL.md`, a one-line Claude import bridge, `.repo-canvas/` in `.gitignore`, and the empty local event store when absent. Existing owner text is preserved; conflicting script names or unmanaged contract files stop initialization with a concrete error.
-
-Codex, Kimi, and current Qwen Code discover the root `AGENTS.md`. Claude Code receives the documented `@AGENTS.md` bridge in `CLAUDE.md`. For an unknown agent, use the bootstrap prompt printed by `init`.
-
-## Commands
-
-```text
-repo-canvas init [--upgrade] [--root <path>]
-repo-canvas start [--port <port>] [--root <path>]
-repo-canvas task|node|edge|log ...
-repo-canvas snapshot
-repo-canvas directives [--task <id>]
-repo-canvas ack --id <directive-id> --actor <agent> --note <result>
-repo-canvas check
-repo-canvas repair [--apply]
-```
-
-The default URL is deterministic. If port 4173 is occupied, choose another explicitly with `--port`; the server never scans ports or starts a daemon. `repair` previews invalid JSON lines and changes nothing until `--apply`, then preserves a full backup and a rejected-lines artifact.
-
-## Honest boundary
-
-The board is checkpoint-synchronous. It shows what agents publish and delivers owner actions when agents poll. It does not continuously inspect private model reasoning, authenticate model identity, synchronize different machines, or perform automatic Git rollback.
+[MIT](LICENSE)

@@ -1,0 +1,114 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cli = path.join(repositoryRoot, "repo-canvas", "scripts", "canvas.mjs");
+if (process.argv[2] === "--clean") {
+  const targets = process.argv.slice(3).map((item) => path.resolve(item));
+  const playwrightArtifacts = path.join(repositoryRoot, ".playwright-cli");
+  const stressParent = path.join(repositoryRoot, "output", "playwright");
+  for (const target of targets) {
+    const allowed = target === playwrightArtifacts
+      || (path.dirname(target) === stressParent && path.basename(target).startsWith("stress-"));
+    if (!allowed) throw new Error(`Refusing cleanup outside Repo Canvas QA paths: ${target}`);
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+  console.log(JSON.stringify({ removed: targets }, null, 2));
+  process.exit(0);
+}
+const root = path.resolve(process.argv[2] || "");
+if (!process.argv[2]) throw new Error("Usage: node tests/generate-stress-fixture.mjs <empty-directory>");
+if (fs.existsSync(root)) throw new Error(`Stress fixture already exists: ${root}`);
+
+fs.mkdirSync(path.join(root, ".git"), { recursive: true });
+fs.writeFileSync(path.join(root, "package.json"), '{"name":"repo-canvas-stress","version":"1.0.0","private":true}\n');
+
+function run(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, ...args], {
+      cwd: root,
+      env: {
+        ...process.env,
+        CODEX_THREAD_ID: "",
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "",
+      },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let error = "";
+    child.stderr.on("data", (chunk) => { error += chunk; });
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`${args.join(" ")} failed (${code}): ${error}`)));
+  });
+}
+
+async function pool(commands, concurrency = 12) {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, commands.length) }, async () => {
+    while (cursor < commands.length) {
+      const index = cursor;
+      cursor += 1;
+      await run(commands[index]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+const areaCount = 12;
+const entitiesPerArea = 20;
+await pool(Array.from({ length: areaCount }, (_, area) => [
+  "area", "--id", `domain-${area + 1}`, "--title", `Промышленная область ${area + 1}`,
+  "--note", "Крупная смысловая территория стресс-карты", "--order", String(area + 1), "--actor", "stress",
+]));
+
+const entityCommands = [];
+for (let area = 0; area < areaCount; area += 1) {
+  for (let index = 0; index < entitiesPerArea; index += 1) {
+    const id = `module-${area + 1}-${index + 1}`;
+    entityCommands.push([
+      "entity", "--id", id, "--area", `domain-${area + 1}`,
+      "--label", `Производственный модуль ${area + 1}.${index + 1}`,
+      "--status", index === 19 && area % 4 === 0 ? "planned" : "operational",
+      "--path", `src/domain-${area + 1}/${id}`, "--purpose", "Обрабатывает устойчивую часть промышленного контура",
+      "--actor", "stress",
+    ]);
+  }
+}
+await pool(entityCommands);
+
+const relationCommands = [];
+for (let area = 0; area < areaCount; area += 1) {
+  for (let index = 1; index < entitiesPerArea; index += 1) {
+    relationCommands.push([
+      "relation", "--from", `module-${area + 1}-${index}`, "--to", `module-${area + 1}-${index + 1}`,
+      "--label", "передаёт поток", "--actor", "stress",
+    ]);
+  }
+  if (area < areaCount - 1) {
+    for (let index = 1; index <= entitiesPerArea; index += 4) {
+      relationCommands.push([
+        "relation", "--from", `module-${area + 1}-${index}`, "--to", `module-${area + 2}-${index}`,
+        "--label", "междоменный контракт", "--actor", "stress",
+      ]);
+    }
+  }
+}
+await pool(relationCommands);
+
+await pool(Array.from({ length: areaCount }, (_, area) => [
+  "work", "--id", `active-work-${area + 1}`, "--title", `Активная работа ${area + 1}`,
+  "--targets", `module-${area + 1}-3,module-${area + 1}-4`, "--status", "active", "--actor", "stress-agent",
+]));
+
+await run(["check"]);
+const snapshot = await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [cli, "snapshot"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  let error = "";
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { error += chunk; });
+  child.once("error", reject);
+  child.once("exit", (code) => code === 0 ? resolve(JSON.parse(output)) : reject(new Error(error)));
+});
+console.log(JSON.stringify({ root, revision: snapshot.revision, ...snapshot.summary }, null, 2));

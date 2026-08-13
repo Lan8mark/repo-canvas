@@ -1,16 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 
-import { DIRECTIVE_ACTIONS } from "./repo-canvas/scripts/canvas-schema.mjs";
-import {
-  appendEvent,
-  createEvent,
-  getSnapshot,
-  packageRoot,
-  projectRoot,
-} from "./repo-canvas/scripts/canvas-store.mjs";
+import { appendEvents, createEvent, getSnapshot, packageRoot, projectRoot } from "./repo-canvas/scripts/canvas-store.mjs";
+import { openSessionLocator } from "./repo-canvas/scripts/session-locator.mjs";
 
 const host = process.env.CANVAS_HOST || "127.0.0.1";
 const port = Number(process.env.CANVAS_PORT || 4173);
@@ -93,7 +86,7 @@ async function readJson(request) {
   let total = 0;
   for await (const chunk of request) {
     total += chunk.length;
-    if (total > 64 * 1024) throw new HttpError(413, "Request body exceeds 64 KiB");
+    if (total > 1024 * 1024) throw new HttpError(413, "Request body exceeds 1 MiB");
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -104,51 +97,63 @@ async function readJson(request) {
   }
 }
 
-function createDirective(body) {
-  const action = String(body.action || "").toLowerCase();
-  if (!DIRECTIVE_ACTIONS.has(action)) throw new HttpError(400, `Unsupported action: ${action || "empty"}`);
-
-  const targetId = String(body.targetId || "").trim();
-  const taskId = String(body.taskId || "").trim();
-  const targetKind = body.targetKind === "task" ? "task" : "node";
-  if (!targetId || !taskId) throw new HttpError(400, "taskId and targetId are required");
-
+function saveLayout(body) {
+  const requestedRevision = Number(body.canvasRevision);
+  if (!Number.isInteger(requestedRevision) || requestedRevision < 0) throw new HttpError(400, "canvasRevision must be a non-negative integer");
+  if (!Array.isArray(body.items) || body.items.length === 0) throw new HttpError(400, "items must be a non-empty array");
   const snapshot = getSnapshot();
-  if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before owner actions");
+  if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before saving layout");
+  if (requestedRevision !== snapshot.revision) throw new HttpError(409, "Canvas changed; refresh before saving layout", { revision: snapshot.revision });
+  const areas = new Map(snapshot.areas.map((item) => [item.id, item]));
+  const entities = new Map(snapshot.entities.map((item) => [item.id, item]));
+  const seen = new Set();
+  const events = body.items.map((item) => {
+    const kind = String(item?.kind || ""); const id = String(item?.id || "").trim();
+    const x = Number(item?.x); const y = Number(item?.y); const key = `${kind}:${id}`;
+    if (!id || seen.has(key)) throw new HttpError(400, "Each layout item must have a unique id and kind");
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new HttpError(400, `Layout coordinates must be finite for ${key}`);
+    seen.add(key);
+    if (kind === "area") {
+      const current = areas.get(id); if (!current) throw new HttpError(404, `Area not found: ${id}`);
+      const { actor, updatedAt, ...payload } = current;
+      return createEvent("area.upsert", { actor: "owner", payload: { ...payload, x, y } });
+    }
+    if (kind === "entity") {
+      const current = entities.get(id); if (!current) throw new HttpError(404, `Entity not found: ${id}`);
+      const { actor, updatedAt, ...payload } = current;
+      return createEvent("entity.upsert", { actor: "owner", payload: { ...payload, x, y } });
+    }
+    throw new HttpError(400, `Unsupported layout item kind: ${kind}`);
+  });
+  try {
+    appendEvents(events, { expectedRevision: requestedRevision });
+  } catch (error) {
+    if (error.code === "STALE_REVISION") throw new HttpError(409, "Canvas changed; refresh before saving layout", { revision: error.currentRevision });
+    throw error;
+  }
+  return { revision: requestedRevision + events.length, saved: events.length };
+}
+
+function findSessionNode(body) {
+  const workId = String(body.workId || "").trim();
+  const nodeId = String(body.nodeId || "").trim();
+  const taskId = String(body.taskId || "").trim();
+  if (!workId && (!nodeId || !taskId)) throw new HttpError(400, "workId or taskId + nodeId is required");
+  const snapshot = getSnapshot();
+  if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before navigation");
   const requestedRevision = Number(body.canvasRevision);
   if (!Number.isInteger(requestedRevision) || requestedRevision < 0) {
     throw new HttpError(400, "canvasRevision must be a non-negative integer");
   }
   if (requestedRevision !== snapshot.revision) {
-    throw new HttpError(409, "Canvas changed; refresh before sending this command", { revision: snapshot.revision });
+    throw new HttpError(409, "Canvas changed; refresh before opening this work session", { revision: snapshot.revision });
   }
-
-  const target = targetKind === "task"
-    ? snapshot.tasks.find((task) => task.id === targetId)
-    : snapshot.nodes.find((node) => node.taskId === taskId && node.id === targetId);
-  if (!target) throw new HttpError(404, `Target not found: ${taskId}/${targetId}`);
-  if (action === "reject" && target.status !== "planned") {
-    throw new HttpError(409, "Only planned work can be rejected; use rollback once work has started");
-  }
-  if (action === "rollback" && !new Set(["active", "changed", "done"]).has(target.status)) {
-    throw new HttpError(409, "Rollback requires active, changed, or completed work");
-  }
-
-  const id = `dir_${crypto.randomUUID()}`;
-  const event = createEvent("directive.created", {
-    actor: "owner",
-    taskId,
-    payload: {
-      id,
-      taskId,
-      targetId,
-      targetKind,
-      action,
-      note: String(body.note || "").slice(0, 4000),
-      canvasRevision: requestedRevision,
-    },
-  });
-  return { event, expectedRevision: requestedRevision };
+  const node = workId
+    ? snapshot.work.find((item) => item.id === workId)
+    : snapshot.nodes.find((item) => item.taskId === taskId && item.id === nodeId);
+  if (!node) throw new HttpError(404, workId ? `Work not found: ${workId}` : `Node not found: ${taskId}/${nodeId}`);
+  if (!node.session) throw new HttpError(422, "The agent did not attach a work session to this node");
+  return node;
 }
 
 async function serveStatic(pathname, response, headOnly = false) {
@@ -193,27 +198,41 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/revision") {
+      const snapshot = getSnapshot();
+      sendJson(response, 200, { revision: snapshot.revision, updatedAt: snapshot.updatedAt });
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/favicon.ico") {
       response.writeHead(204, { "Cache-Control": "public, max-age=86400" });
       response.end();
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/sessions/open") {
+      guardMutation(request);
+      try {
+        const node = findSessionNode(await readJson(request));
+        const result = await openSessionLocator(node.session);
+        sendJson(response, 200, { ok: true, ...result });
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        throw new HttpError(502, `Could not open the work session: ${error.message}`);
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/layout") {
+      guardMutation(request);
+      const result = saveLayout(await readJson(request));
+      sendJson(response, 201, { ok: true, ...result });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/directives") {
       guardMutation(request);
-      const { event, expectedRevision } = createDirective(await readJson(request));
-      let directive;
-      try {
-        directive = appendEvent(event, { expectedRevision });
-      } catch (error) {
-        if (error.code === "STALE_REVISION") {
-          throw new HttpError(409, "Canvas changed; refresh before sending this command", {
-            revision: error.currentRevision,
-          });
-        }
-        throw error;
-      }
-      sendJson(response, 201, { ok: true, directiveId: directive.payload.id, revision: expectedRevision + 1 });
+      sendJson(response, 410, { ok: false, error: "Canvas commands were removed; open the agent's work session instead" });
       return;
     }
 

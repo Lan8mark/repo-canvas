@@ -42,18 +42,53 @@ function compact(object) {
   return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined));
 }
 
+function list(value) {
+  if (value === undefined || value === true || String(value).trim() === "") return undefined;
+  return String(value).split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function inferSession(args, status) {
+  const explicitSurface = Boolean(args.surface);
+  if (!explicitSurface && !new Set(["active", "changed"]).has(status)) return undefined;
+  let kind = explicitSurface ? String(args.surface) : "";
+  let id = args.session ? String(args.session) : "";
+
+  if (!kind && process.env.CODEX_THREAD_ID) {
+    kind = /desktop/i.test(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE || "") ? "codex-app" : "codex-cli";
+    id = process.env.CODEX_THREAD_ID;
+  }
+  if (!kind && process.env.CLAUDE_CODE_SESSION_ID) {
+    kind = "claude-cli";
+    id = process.env.CLAUDE_CODE_SESSION_ID;
+  }
+  if (!kind && (process.env.KIMI_SESSION_ID || process.env.KIMI_CODE_SESSION_ID)) {
+    kind = "kimi-cli";
+    id = process.env.KIMI_SESSION_ID || process.env.KIMI_CODE_SESSION_ID;
+  }
+  if (!kind) return undefined;
+
+  return compact({
+    kind,
+    id: id || undefined,
+    title: args["session-title"] ? String(args["session-title"]) : undefined,
+    pid: optionalNumber(args.pid),
+    cwd: args.cwd ? path.resolve(process.cwd(), String(args.cwd)) : process.cwd(),
+  });
+}
+
 function printHelp() {
   console.log(`Repo Canvas CLI
 
 Commands:
   init        Install the repository contract and local scripts
   start       Run the foreground loopback canvas server
-  task        Upsert a task
-  node        Upsert a module-level node
-  edge        Upsert a connection
+  area        Upsert a large semantic project area
+  entity      Upsert a persistent module or responsibility
+  relation    Upsert a structural relation between entities
+  work        Upsert a small agent-work satellite attached to entities
+  work start  Atomically register and verify active work before product writes
+  work guard  Fail unless this session has verified active work
   log         Record a decision or verification result
-  directives  List pending owner directives (exit 2 when present)
-  ack         Acknowledge a handled directive
   snapshot    Print the reduced canvas state
   check       Validate the event log and print a summary
   repair      Preview corrupt-line recovery; add --apply to repair
@@ -65,9 +100,11 @@ Global options:
 Examples:
   repo-canvas init
   repo-canvas start
-  repo-canvas task --id demo --title "Demo" --status active --actor codex
-  repo-canvas node --task demo --id api --label "API" --status planned --actor codex
-  repo-canvas directives --task demo
+  repo-canvas area --id knowledge --title "Knowledge base" --order 1
+  repo-canvas entity --id search --area knowledge --label "Standards search" --status operational --path src/search
+  repo-canvas relation --from search --to registry --label "reads"
+  repo-canvas work --id improve-search --title "Improve matching" --targets search --status active --actor codex
+  repo-canvas work start --id improve-search --title "Improve matching" --targets search --note "Tighten matching"
 `);
 }
 
@@ -98,7 +135,89 @@ if (args.root === true) {
         console.log(JSON.stringify(event, null, 2));
       };
 
-      if (command === "task") {
+      if (command === "area") {
+        emit("area.upsert", args.actor || "unknown", null, {
+          id: required(args, "id"),
+          title: required(args, "title"),
+          note: args.note || "",
+          x: optionalNumber(args.x), y: optionalNumber(args.y),
+          width: optionalNumber(args.width), height: optionalNumber(args.height),
+          order: optionalNumber(args.order),
+        });
+      } else if (command === "entity") {
+        emit("entity.upsert", args.actor || "unknown", null, {
+          id: required(args, "id"),
+          areaId: required(args, "area"),
+          label: required(args, "label"),
+          status: args.status || "operational",
+          path: args.path || "",
+          purpose: args.purpose || "",
+          note: args.note || "",
+          inputs: list(args.inputs), outputs: list(args.outputs), dependsOn: list(args.depends),
+          x: optionalNumber(args.x), y: optionalNumber(args.y), order: optionalNumber(args.order),
+        });
+      } else if (command === "relation") {
+        const from = required(args, "from");
+        const to = required(args, "to");
+        emit("relation.upsert", args.actor || "unknown", null, {
+          id: args.id || `${from}->${to}`,
+          from, to,
+          label: args.label || "",
+          status: args.status || "existing",
+        });
+      } else if (command === "work") {
+        const action = args._[0] || "upsert";
+        if (action === "guard") {
+          const snapshot = getSnapshot();
+          const requestedId = args.id && args.id !== true ? String(args.id) : "";
+          const session = inferSession(args, "active");
+          const item = requestedId
+            ? snapshot.work.find((candidate) => candidate.id === requestedId)
+            : snapshot.work.find((candidate) => candidate.status === "active"
+              && session?.id && candidate.session?.id === session.id);
+          const validTargets = item?.targets?.length > 0 && item.targets.every((id) => snapshot.entities.some((entity) => entity.id === id));
+          const validSession = item?.session?.kind && (item.session.id || item.session.kind === "kimi-app");
+          if (!item || item.status !== "active" || !String(item.note || "").trim() || !validTargets || !validSession) {
+            throw new Error("Current session has no verified active work. Run `npm run repo-canvas -- work start --id <id> --title <title> --targets <entity-ids> --note <intent>` first.");
+          }
+          console.log(`Repo Canvas guard OK — ${item.id} is active for ${item.targets.join(", ")}.`);
+        } else if (action === "start") {
+          const before = getSnapshot();
+          const id = required(args, "id");
+          const title = required(args, "title");
+          const targets = list(required(args, "targets"));
+          const note = required(args, "note");
+          const unknownTargets = targets.filter((target) => !before.entities.some((entity) => entity.id === target));
+          if (unknownTargets.length) throw new Error(`Unknown work targets: ${unknownTargets.join(", ")}`);
+          const session = inferSession(args, "active");
+          if (!session?.kind || (!session.id && session.kind !== "kimi-app")) {
+            throw new Error("Active work must identify the current session; pass --surface and --session when it cannot be detected automatically");
+          }
+          appendEvent(createEvent("work.upsert", {
+            actor: args.actor || "unknown",
+            payload: { id, title, status: "active", targets, note, session },
+          }), { expectedRevision: before.revision });
+          const after = getSnapshot();
+          const registered = after.work.find((item) => item.id === id);
+          const verified = after.revision === before.revision + 1
+            && registered?.status === "active"
+            && registered.note === note
+            && registered.session?.kind === session.kind
+            && registered.session?.id === session.id
+            && targets.every((target) => registered.targets.includes(target));
+          if (!verified) throw new Error("Work event was written but verification failed; stop before changing product files and run canvas check");
+          console.log(JSON.stringify({ ok: true, verified: true, revision: after.revision, work: registered }, null, 2));
+        } else {
+          const status = args.status || "planned";
+          emit("work.upsert", args.actor || "unknown", null, {
+            id: required(args, "id"), title: required(args, "title"), status,
+            targets: list(required(args, "targets")), note: args.note || "", session: inferSession(args, status),
+          });
+        }
+      } else if (command === "hook") {
+        const { runHook } = await import("./canvas-hook.mjs");
+        await runHook();
+      } else if (command === "task") {
         const id = required(args, "id");
         emit("task.upsert", args.actor || "unknown", id, {
           id,
@@ -108,16 +227,18 @@ if (args.root === true) {
         });
       } else if (command === "node") {
         const taskId = required(args, "task");
+        const status = args.status || "planned";
         emit("node.upsert", args.actor || "unknown", taskId, {
           id: required(args, "id"),
           label: required(args, "label"),
           path: args.path || "",
-          status: args.status || "planned",
+          status,
           risk: args.risk || "safe",
           note: args.note || "",
           x: optionalNumber(args.x),
           y: optionalNumber(args.y),
           order: optionalNumber(args.order),
+          session: inferSession(args, status),
         });
       } else if (command === "edge") {
         const taskId = required(args, "task");
@@ -135,21 +256,6 @@ if (args.root === true) {
           message: required(args, "message"),
           level: args.level || "info",
         });
-      } else if (command === "directives") {
-        const snapshot = getSnapshot();
-        const pending = snapshot.pendingDirectives.filter((directive) => !args.task || directive.taskId === args.task);
-        console.log(JSON.stringify(pending, null, 2));
-        if (pending.length) process.exitCode = 2;
-      } else if (command === "ack") {
-        const directiveId = required(args, "id");
-        const snapshot = getSnapshot();
-        if (snapshot.storeErrors.length) throw new Error("Cannot acknowledge directives while the event store is invalid");
-        const directive = snapshot.pendingDirectives.find((item) => item.id === directiveId);
-        if (!directive) throw new Error(`Pending directive not found: ${directiveId}`);
-        emit("directive.ack", args.actor || "unknown", directive.taskId, {
-          directiveId,
-          note: required(args, "note"),
-        });
       } else if (command === "snapshot") {
         console.log(JSON.stringify(getSnapshot(), null, 2));
       } else if (command === "check") {
@@ -159,7 +265,7 @@ if (args.root === true) {
           process.exitCode = 1;
         } else {
           console.log(
-            `Repo Canvas OK — revision ${snapshot.revision}, ${snapshot.summary.taskCount} tasks, ${snapshot.summary.nodeCount} nodes, ${snapshot.summary.pendingDirectives} pending directives.`,
+            `Repo Canvas OK — revision ${snapshot.revision}, ${snapshot.summary.areaCount} areas, ${snapshot.summary.entityCount} entities, ${snapshot.summary.activeWork} active work.`,
           );
         }
       } else if (command === "repair") {

@@ -1,540 +1,510 @@
-const NODE_WIDTH = 232;
-const NODE_HEIGHT = 106;
-const LANE_HEIGHT = 272;
-const GRID_COLUMNS = 4;
-const GRID_START_X = 120;
-const GRID_START_Y = 170;
-const GRID_STEP_X = 285;
-const GRID_STEP_Y = 164;
-const NODE_CLEARANCE = 22;
+import { anchoredZoomTransform, captionAwareDetour, chooseFloatingCaption, connectionAnchors, crossAreaDetour, packAreaRectangles, paddedBox, relationCurve, sampleRelationCurve } from "./canvas-layout.js";
 
-const STATUS_LABELS = {
-  existing: "существует",
-  planned: "запланировано",
-  active: "в работе",
-  changed: "изменено",
-  done: "готово",
-  blocked: "остановлено",
-  rejected: "отклонено",
-};
-
-const TASK_STATUS_LABELS = {
-  planned: "запланирована",
-  active: "в работе",
-  changed: "изменяется",
-  done: "готова",
-  blocked: "остановлена",
-  rejected: "отклонена",
-};
-
-const ACTION_LABELS = {
-  explain: "пояснить",
-  correct: "скорректировать",
-  stop: "остановить",
-  reject: "отклонить",
-  rollback: "откатить",
-};
-
+const $ = (selector) => document.querySelector(selector);
 const elements = {
-  viewport: document.querySelector("#viewport"),
-  world: document.querySelector("#world"),
-  nodeLayer: document.querySelector("#nodeLayer"),
-  edgeLayer: document.querySelector("#edgeLayer"),
-  taskZones: document.querySelector("#taskZones"),
-  taskList: document.querySelector("#taskList"),
-  taskCount: document.querySelector("#taskCount"),
-  canvasTitle: document.querySelector("#canvasTitle"),
-  emptyState: document.querySelector("#emptyState"),
-  revisionValue: document.querySelector("#revisionValue"),
-  activeValue: document.querySelector("#activeValue"),
-  signalValue: document.querySelector("#signalValue"),
-  connectionStatus: document.querySelector("#connectionStatus"),
-  lastSync: document.querySelector("#lastSync"),
-  inspectorEmpty: document.querySelector("#inspectorEmpty"),
-  inspectorContent: document.querySelector("#inspectorContent"),
-  selectedStatus: document.querySelector("#selectedStatus"),
-  selectedActor: document.querySelector("#selectedActor"),
-  selectedLabel: document.querySelector("#selectedLabel"),
-  selectedPath: document.querySelector("#selectedPath"),
-  selectedNote: document.querySelector("#selectedNote"),
-  selectedTask: document.querySelector("#selectedTask"),
-  selectedUpdated: document.querySelector("#selectedUpdated"),
-  ownerNote: document.querySelector("#ownerNote"),
-  destructiveAction: document.querySelector("#destructiveAction"),
-  pendingCount: document.querySelector("#pendingCount"),
-  pendingList: document.querySelector("#pendingList"),
-  activityList: document.querySelector("#activityList"),
-  toast: document.querySelector("#toast"),
+  areaValue: $("#areaValue"), entityValue: $("#entityValue"), activeValue: $("#activeValue"),
+  connection: $("#connectionStatus"), projectCount: $("#projectCount"), projectTree: $("#projectTree"),
+  allProject: $("#allProject"), passport: $("#passport"), passportArea: $("#passportArea"),
+  passportTitle: $("#passportTitle"), passportPurpose: $("#passportPurpose"), passportFacts: $("#passportFacts"),
+  closePassport: $("#closePassport"), nowCount: $("#nowCount"), nowList: $("#nowList"),
+  activityList: $("#activityList"), lastSync: $("#lastSync"), canvasTitle: $("#canvasTitle"),
+  viewport: $("#viewport"), world: $("#world"), areaLayer: $("#areaLayer"), edgeLayer: $("#edgeLayer"),
+  entityLayer: $("#entityLayer"), workLayer: $("#workLayer"), emptyState: $("#emptyState"), toast: $("#toast"),
 };
 
+const ENTITY_W = 244;
+const ENTITY_H = 122;
+const WORK_W = 196;
+const WORK_H = 66;
+const AREA_W = 850;
+const AREA_GAP = 150;
+const ENTITY_STEP_X = 304;
+const ENTITY_STEP_Y = 276;
 let snapshot = null;
-let selectedNodeKey = null;
-let focusedTaskId = "all";
+let selectedArea = "all";
+let selectedEntity = null;
 let transform = { x: 0, y: 0, scale: 1 };
-let worldSize = { width: 1840, height: 920 };
-let isPanning = false;
-let panOrigin = null;
-let hasFitOnce = false;
-let knownNodes = new Set();
+let worldSize = { width: 1800, height: 1000 };
+let pan = null;
+let fitDone = false;
 let toastTimer = null;
+let relationCaptions = [];
+let relationObstacles = [];
+let relationCaptionFrame = null;
+let relationCaptionLastFrame = -Infinity;
+let currentLayout = null;
+let layoutDrag = null;
+let layoutSaving = false;
+let suppressEntityClickUntil = 0;
+const RELATION_CAPTION_FRAME_MS = 1000 / 60;
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
 function relativeTime(value) {
   if (!value) return "—";
   const delta = Math.max(0, Date.now() - new Date(value).getTime());
   if (delta < 10_000) return "сейчас";
-  if (delta < 60_000) return `${Math.floor(delta / 1000)} сек назад`;
-  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} мин назад`;
+  if (delta < 60_000) return `${Math.floor(delta / 1000)} сек`;
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} мин`;
   return new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
-function statusLabel(status, labels = STATUS_LABELS) {
-  return labels[status] || status || "—";
+function activeWork() {
+  return (snapshot?.work || []).filter((item) => ["active", "blocked", "planned"].includes(item.status));
 }
 
-function nodeKey(node) {
-  return `${node.taskId}::${node.id}`;
-}
-
-function updateTransform() {
-  elements.world.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
-}
-
-function clampScale(scale) {
-  return Math.min(1.5, Math.max(0.32, scale));
-}
-
-function fitView(taskId = focusedTaskId) {
-  if (!snapshot?.nodes.length) return;
-  const nodes = snapshot.nodes.filter((node) => taskId === "all" || node.taskId === taskId);
-  if (!nodes.length) return;
-  const positions = layoutNodes(snapshot.tasks, snapshot.nodes);
-  const selected = nodes.map((node) => positions.get(nodeKey(node))).filter(Boolean);
-  const minX = Math.min(...selected.map((position) => position.x)) - 45;
-  const minY = Math.min(...selected.map((position) => position.y)) - 70;
-  const maxX = Math.max(...selected.map((position) => position.x + NODE_WIDTH)) + 45;
-  const maxY = Math.max(...selected.map((position) => position.y + NODE_HEIGHT)) + 60;
-  const rect = elements.viewport.getBoundingClientRect();
-  const scale = clampScale(Math.min(rect.width / (maxX - minX), rect.height / (maxY - minY)) * 0.93);
-  transform = {
-    scale,
-    x: (rect.width - (maxX - minX) * scale) / 2 - minX * scale,
-    y: (rect.height - (maxY - minY) * scale) / 2 - minY * scale,
-  };
-  updateTransform();
-}
-
-function zoomAt(nextScale, clientX, clientY) {
-  const rect = elements.viewport.getBoundingClientRect();
-  const pointX = clientX - rect.left;
-  const pointY = clientY - rect.top;
-  const worldX = (pointX - transform.x) / transform.scale;
-  const worldY = (pointY - transform.y) / transform.scale;
-  const scale = clampScale(nextScale);
-  transform = {
-    scale,
-    x: pointX - worldX * scale,
-    y: pointY - worldY * scale,
-  };
-  updateTransform();
-}
-
-function hasExplicitPosition(node) {
-  return Number.isFinite(Number(node.x)) && Number.isFinite(Number(node.y));
-}
-
-function gridPosition(slot, taskOffsetY) {
-  return {
-    x: GRID_START_X + (slot % GRID_COLUMNS) * GRID_STEP_X,
-    y: taskOffsetY + GRID_START_Y + Math.floor(slot / GRID_COLUMNS) * GRID_STEP_Y,
-  };
-}
-
-function overlapsOccupied(candidate, occupied) {
-  return occupied.some((position) => (
-    candidate.x < position.x + NODE_WIDTH + NODE_CLEARANCE
-    && candidate.x + NODE_WIDTH + NODE_CLEARANCE > position.x
-    && candidate.y < position.y + NODE_HEIGHT + NODE_CLEARANCE
-    && candidate.y + NODE_HEIGHT + NODE_CLEARANCE > position.y
-  ));
-}
-
-function firstFreeGridPosition(occupied, taskOffsetY, preferredSlot = 0) {
-  for (let offset = 0; offset < 400; offset += 1) {
-    const candidate = gridPosition(preferredSlot + offset, taskOffsetY);
-    if (!overlapsOccupied(candidate, occupied)) return candidate;
-  }
-  return gridPosition(occupied.length, taskOffsetY);
-}
-
-function layoutNodes(tasks, nodes) {
-  const positions = new Map();
-  const taskIds = tasks.map((task) => task.id);
-  let taskOffsetY = 0;
-  for (const node of nodes) {
-    if (!taskIds.includes(node.taskId)) taskIds.push(node.taskId);
-  }
-
-  taskIds.forEach((taskId) => {
-    const taskNodes = nodes.filter((node) => node.taskId === taskId);
-    const occupied = [];
-    const orderedNodes = [...taskNodes].sort((left, right) => {
-      const explicitDifference = Number(hasExplicitPosition(right)) - Number(hasExplicitPosition(left));
-      if (explicitDifference) return explicitDifference;
-      return Number(left.order ?? Number.MAX_SAFE_INTEGER) - Number(right.order ?? Number.MAX_SAFE_INTEGER);
-    });
-
-    orderedNodes.forEach((node, nodeIndex) => {
-      let candidate = hasExplicitPosition(node)
-        ? { x: Number(node.x), y: taskOffsetY + Number(node.y) }
-        : firstFreeGridPosition(occupied, taskOffsetY, Math.max(0, Number(node.order ?? nodeIndex + 1) - 1));
-
-      if (overlapsOccupied(candidate, occupied)) {
-        candidate = firstFreeGridPosition(occupied, taskOffsetY);
-      }
-      positions.set(nodeKey(node), candidate);
-      occupied.push(candidate);
-    });
-    const taskPositions = taskNodes.map((node) => positions.get(nodeKey(node))).filter(Boolean);
-    const taskBottom = taskPositions.length
-      ? Math.max(...taskPositions.map((position) => position.y + NODE_HEIGHT))
-      : taskOffsetY;
-    taskOffsetY = Math.max(taskOffsetY + LANE_HEIGHT, taskBottom + 128);
+function layout() {
+  const areas = snapshot.areas || [];
+  const entityPositions = new Map();
+  const areaSpecs = areas.map((area) => {
+    const entities = snapshot.entities.filter((entity) => entity.areaId === area.id);
+    const requestedWidth = Number(area.width);
+    const columns = Number.isFinite(requestedWidth)
+      ? Math.max(1, Math.floor((requestedWidth - 70) / ENTITY_STEP_X))
+      : Math.max(3, Math.ceil(Math.sqrt(Math.max(1, entities.length) * 1.35)));
+    const rows = Math.max(1, Math.ceil(entities.length / columns));
+    const contentWidth = Math.max(AREA_W, 70 + columns * ENTITY_STEP_X);
+    const contentHeight = Math.max(400, 150 + rows * ENTITY_STEP_Y);
+    return {
+      id: area.id,
+      x: area.x,
+      y: area.y,
+      width: Number.isFinite(requestedWidth) ? Math.max(requestedWidth, contentWidth) : contentWidth,
+      height: Number.isFinite(Number(area.height)) ? Math.max(Number(area.height), contentHeight) : contentHeight,
+      columns,
+      entities,
+    };
   });
-
-  const values = [...positions.values()];
+  const entitiesById = new Map(snapshot.entities.map((entity) => [entity.id, entity]));
+  const pairCounts = new Map();
+  for (const relation of snapshot.relations || []) {
+    const sourceArea = entitiesById.get(relation.from)?.areaId;
+    const targetArea = entitiesById.get(relation.to)?.areaId;
+    if (!sourceArea || !targetArea || sourceArea === targetArea) continue;
+    const key = [sourceArea, targetArea].sort().join("::");
+    pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+  }
+  const densestCorridor = Math.max(0, ...pairCounts.values());
+  const adaptiveAreaGap = Math.max(AREA_GAP, 92 + densestCorridor * 38);
+  const areaPositions = packAreaRectangles(areaSpecs, { gap: adaptiveAreaGap });
+  for (const spec of areaSpecs) {
+    const areaPosition = areaPositions.get(spec.id);
+    const { x, y } = areaPosition;
+    spec.entities.forEach((entity, slot) => {
+      const ex = Number.isFinite(Number(entity.x)) ? Number(entity.x) : x + 48 + (slot % spec.columns) * ENTITY_STEP_X;
+      const ey = Number.isFinite(Number(entity.y)) ? Number(entity.y) : y + 102 + Math.floor(slot / spec.columns) * ENTITY_STEP_Y;
+      entityPositions.set(entity.id, { x: ex, y: ey });
+    });
+  }
+  const workPositions = new Map();
+  const targetCounters = new Map();
+  activeWork().forEach((item) => {
+    const target = item.targets?.find((id) => entityPositions.has(id));
+    if (!target) return;
+    const base = entityPositions.get(target);
+    const count = targetCounters.get(target) || 0;
+    targetCounters.set(target, count + 1);
+    workPositions.set(item.id, { x: base.x + 24 + (count % 2) * 208, y: base.y + ENTITY_H + 18 + Math.floor(count / 2) * 78 });
+  });
   worldSize = {
-    width: Math.max(1840, ...values.map((position) => position.x + NODE_WIDTH + 160)),
-    height: Math.max(760, ...values.map((position) => position.y + NODE_HEIGHT + 170)),
+    width: Math.max(1000, ...[...areaPositions.values()].map((p) => p.x + p.width + 70)),
+    height: Math.max(720, ...[...areaPositions.values()].map((p) => p.y + p.height + 80)),
   };
   elements.world.style.width = `${worldSize.width}px`;
   elements.world.style.height = `${worldSize.height}px`;
   elements.edgeLayer.setAttribute("viewBox", `0 0 ${worldSize.width} ${worldSize.height}`);
-  return positions;
+  currentLayout = { areaPositions, entityPositions, workPositions };
+  return currentLayout;
 }
 
-function renderTaskZones(tasks, nodes, positions) {
-  elements.taskZones.innerHTML = "";
-  for (const task of tasks) {
-    const taskNodes = nodes.filter((node) => node.taskId === task.id);
-    if (!taskNodes.length) continue;
-    const taskPositions = taskNodes.map((node) => positions.get(nodeKey(node)));
-    const minX = Math.min(...taskPositions.map((position) => position.x)) - 34;
-    const minY = Math.min(...taskPositions.map((position) => position.y)) - 70;
-    const maxX = Math.max(...taskPositions.map((position) => position.x + NODE_WIDTH)) + 34;
-    const maxY = Math.max(...taskPositions.map((position) => position.y + NODE_HEIGHT)) + 38;
-    const zone = document.createElement("div");
-    zone.className = "task-zone";
-    zone.style.left = `${minX}px`;
-    zone.style.top = `${minY}px`;
-    zone.style.width = `${maxX - minX}px`;
-    zone.style.height = `${maxY - minY}px`;
-    zone.innerHTML = `<span>${escapeHtml(task.title)} · ${escapeHtml(statusLabel(task.status || "active", TASK_STATUS_LABELS))}</span>`;
-    elements.taskZones.append(zone);
-  }
-}
-
-function renderEdges(edges, nodes, positions) {
-  const nodeLookup = new Map(nodes.map((node) => [nodeKey(node), node]));
-  elements.edgeLayer.innerHTML = "";
-  for (const edge of edges) {
-    const fromNode = nodeLookup.get(`${edge.taskId}::${edge.from}`);
-    const toNode = nodeLookup.get(`${edge.taskId}::${edge.to}`);
-    if (!fromNode || !toNode) continue;
-    const from = positions.get(nodeKey(fromNode));
-    const to = positions.get(nodeKey(toNode));
-    let x1;
-    let y1;
-    let x2;
-    let y2;
-    let path;
-    if (to.x > from.x + NODE_WIDTH + 20) {
-      x1 = from.x + NODE_WIDTH;
-      y1 = from.y + NODE_HEIGHT / 2;
-      x2 = to.x;
-      y2 = to.y + NODE_HEIGHT / 2;
-      const bend = Math.max(50, Math.abs(x2 - x1) * 0.42);
-      path = `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
-    } else {
-      x1 = from.x + NODE_WIDTH / 2;
-      y1 = from.y + NODE_HEIGHT;
-      x2 = to.x + NODE_WIDTH / 2;
-      y2 = to.y;
-      const bend = Math.max(45, Math.abs(y2 - y1) * 0.5);
-      path = `M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`;
-    }
-    const muted = focusedTaskId !== "all" && edge.taskId !== focusedTaskId;
-    elements.edgeLayer.insertAdjacentHTML(
-      "beforeend",
-      `<path class="edge-path ${escapeHtml(edge.status || "planned")}" d="${path}" opacity="${muted ? "0.1" : "1"}"></path>${
-        edge.label
-          ? `<text class="edge-label" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 10}" text-anchor="middle" opacity="${muted ? "0.1" : "1"}">${escapeHtml(edge.label)}</text>`
-          : ""
-      }`,
-    );
-  }
-}
-
-function renderNodes(nodes, positions, directives) {
-  const previousKnown = knownNodes;
-  const nextKnown = new Set();
-  elements.nodeLayer.innerHTML = "";
-
-  for (const node of nodes) {
-    const key = nodeKey(node);
-    nextKnown.add(key);
-    const position = positions.get(key);
-    const hasSignal = directives.some(
-      (directive) => directive.status === "pending" && directive.taskId === node.taskId && directive.targetId === node.id,
-    );
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = [
-      "repo-node",
-      node.status || "planned",
-      selectedNodeKey === key ? "is-selected" : "",
-      focusedTaskId !== "all" && focusedTaskId !== node.taskId ? "is-muted" : "",
-      previousKnown.size && !previousKnown.has(key) ? "is-new" : "",
-    ].filter(Boolean).join(" ");
-    button.style.left = `${position.x}px`;
-    button.style.top = `${position.y}px`;
-    button.dataset.key = key;
-    button.innerHTML = `
-      <span class="node-top">
-        <span class="node-status">${escapeHtml(statusLabel(node.status || "planned"))}</span>
-        <span class="node-agent">${escapeHtml(node.actor || "agent")}</span>
-      </span>
-      <strong class="node-title">${escapeHtml(node.label || node.id)}</strong>
-      <span class="node-bottom">
-        <span class="node-path">${escapeHtml(node.path || "без привязки к файлу")}</span>
-        <i class="node-signal ${hasSignal ? "has-signal" : ""}"></i>
-      </span>
-    `;
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      selectedNodeKey = key;
-      elements.ownerNote.value = "";
-      renderAll();
-    });
-    elements.nodeLayer.append(button);
-  }
-
-  knownNodes = nextKnown;
-}
-
-function renderTasks(tasks) {
-  elements.taskCount.textContent = String(tasks.length);
-  elements.taskList.innerHTML = tasks.map((task, index) => `
-    <button class="task-filter ${focusedTaskId === task.id ? "is-active" : ""}" data-task="${escapeHtml(task.id)}" type="button">
-      <span class="task-index">${String(index + 1).padStart(2, "0")}</span>
-      <span><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.actor || "агент")} · ${escapeHtml(statusLabel(task.status || "active", TASK_STATUS_LABELS))}</small></span>
-    </button>
-  `).join("");
-  document.querySelector('[data-task="all"]').classList.toggle("is-active", focusedTaskId === "all");
-  elements.taskList.querySelectorAll(".task-filter").forEach((button) => {
-    button.addEventListener("click", () => {
-      focusedTaskId = button.dataset.task;
-      const task = tasks.find((item) => item.id === focusedTaskId);
-      elements.canvasTitle.textContent = task?.title || "Вся работа";
-      renderAll();
-      requestAnimationFrame(() => fitView(focusedTaskId));
-    });
+function center(position, width = ENTITY_W, height = ENTITY_H) { return { x: position.x + width / 2, y: position.y + height / 2 }; }
+function renderAreas(positions) {
+  elements.areaLayer.innerHTML = "";
+  snapshot.areas.forEach((area) => {
+    const p = positions.get(area.id);
+    const section = document.createElement("section");
+    section.className = `project-area ${selectedArea !== "all" && selectedArea !== area.id ? "is-muted" : ""}`;
+    section.dataset.areaId = area.id;
+    section.style.cssText = `left:${p.x}px;top:${p.y}px;width:${p.width}px;height:${p.height}px`;
+    section.innerHTML = `<header title="Перетащить всю область"><small>ОБЛАСТЬ ПРОЕКТА</small><h2>${escapeHtml(area.title)}</h2><p>${escapeHtml(area.note || "")}</p></header>`;
+    section.querySelector("header").addEventListener("pointerdown", (event) => beginLayoutDrag(event, "area", area.id));
+    elements.areaLayer.append(section);
   });
 }
 
-function renderInspector(nodes) {
-  const selected = nodes.find((node) => nodeKey(node) === selectedNodeKey);
-  elements.inspectorEmpty.hidden = Boolean(selected);
-  elements.inspectorContent.hidden = !selected;
-  if (!selected) return;
+function renderRelations(areaPositions, entityPositions, workPositions) {
+  const occupied = [];
+  const captionDefinitions = [];
+  for (const position of areaPositions.values()) {
+    const header = { x: position.x + 18, y: position.y + 14, width: Math.min(position.width - 36, 560), height: 86 };
+    occupied.push(header);
+  }
+  for (const position of entityPositions.values()) occupied.push(paddedBox(position, ENTITY_W, ENTITY_H, 10));
+  for (const position of workPositions.values()) occupied.push(paddedBox(position, WORK_W, WORK_H, 8));
 
-  elements.selectedStatus.textContent = statusLabel(selected.status || "planned");
-  elements.selectedActor.textContent = selected.actor || "агент";
-  elements.selectedLabel.textContent = selected.label || selected.id;
-  elements.selectedPath.textContent = selected.path || "без привязки к файлу";
-  elements.selectedNote.textContent = selected.note || "Агент пока не оставил пояснение.";
-  elements.selectedTask.textContent = selected.taskId;
-  elements.selectedUpdated.textContent = relativeTime(selected.updatedAt);
-
-  const shouldRollback = ["active", "changed", "done"].includes(selected.status);
-  elements.destructiveAction.dataset.action = shouldRollback ? "rollback" : "reject";
-  elements.destructiveAction.textContent = shouldRollback ? "Откатить работу" : "Отклонить план";
+  const parts = ["<g>"];
+  const entitiesById = new Map(snapshot.entities.map((entity) => [entity.id, entity]));
+  const corridorCounters = new Map();
+  const localCounters = new Map();
+  for (const [relationIndex, relation] of (snapshot.relations || []).entries()) {
+    const a = entityPositions.get(relation.from); const b = entityPositions.get(relation.to);
+    if (!a || !b) continue;
+    const sourceEntity = entitiesById.get(relation.from); const targetEntity = entitiesById.get(relation.to);
+    const muted = selectedArea !== "all" && ![sourceEntity, targetEntity].some((entity) => entity?.areaId === selectedArea);
+    const width = relation.label ? Math.min(190, Math.max(48, String(relation.label).length * 5.2 + 18)) : 0;
+    const crossArea = sourceEntity?.areaId !== targetEntity?.areaId;
+    const routeKey = crossArea
+      ? [sourceEntity?.areaId, targetEntity?.areaId].sort().join("::")
+      : [relation.from, relation.to].sort().join("::");
+    const counters = crossArea ? corridorCounters : localCounters;
+    const routeIndex = counters.get(routeKey) || 0;
+    counters.set(routeKey, routeIndex + 1);
+    const routeLane = routeIndex * 38;
+    const corridorOffset = routeIndex === 0 ? 0 : (routeIndex % 2 ? -1 : 1) * Math.ceil(routeIndex / 2) * 38;
+    const areaDetour = sourceEntity?.areaId !== targetEntity?.areaId
+      ? crossAreaDetour(a, b, areaPositions.get(sourceEntity?.areaId), areaPositions.get(targetEntity?.areaId), {
+        width: ENTITY_W, height: ENTITY_H, lane: routeLane, corridorOffset,
+      })
+      : null;
+    const detour = areaDetour || (relation.label ? captionAwareDetour(a, b, width, {
+      width: ENTITY_W, height: ENTITY_H, lane: routeLane,
+    }) : null);
+    const { from, to } = detour || connectionAnchors(a, b, ENTITY_W, ENTITY_H);
+    const laneOffsets = [0, -34, 34, -68, 68];
+    const geometry = relationCurve(from, to, {
+      laneOffset: laneOffsets[relationIndex % laneOffsets.length],
+      waypoints: detour?.waypoints,
+    });
+    parts.push(`<path class="relation ${relation.status} ${muted ? "is-muted" : ""}" d="${geometry.d}"><title>${escapeHtml(relation.label || `${relation.from} → ${relation.to}`)}</title></path>`);
+    if (relation.label) {
+      const height = 22;
+      const captionIndex = captionDefinitions.length;
+      const samples = sampleRelationCurve(geometry);
+      const xs = samples.map((point) => point.x); const ys = samples.map((point) => point.y);
+      captionDefinitions.push({
+        samples, currentProgress: .5, width, height, muted,
+        bounds: { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) },
+      });
+      parts.push(`<g data-relation-caption="${captionIndex}" class="relation-caption ${muted ? "is-muted" : ""}" hidden><rect x="${-width / 2}" y="${-height / 2}" width="${width}" height="${height}" rx="11"></rect><text>${escapeHtml(relation.label)}</text></g>`);
+    }
+  }
+  for (const item of activeWork()) {
+    const wp = workPositions.get(item.id); if (!wp) continue;
+    for (const target of item.targets || []) {
+      const ep = entityPositions.get(target); if (!ep) continue;
+      const from = center(ep); const to = center(wp, WORK_W, WORK_H);
+      parts.push(`<path class="work-link ${item.status}" d="M ${from.x} ${from.y + 36} C ${from.x} ${to.y}, ${to.x} ${from.y + 50}, ${to.x} ${to.y}"></path>`);
+    }
+  }
+  parts.push("</g>");
+  elements.edgeLayer.innerHTML = parts.join("");
+  relationObstacles = occupied;
+  relationCaptions = captionDefinitions.map((definition, index) => ({
+    ...definition,
+    element: elements.edgeLayer.querySelector(`[data-relation-caption="${index}"]`),
+  }));
+  scheduleRelationCaptionUpdate();
 }
 
-function renderPending(directives) {
-  const pending = directives.filter((directive) => directive.status === "pending");
-  elements.pendingCount.textContent = String(pending.length);
-  elements.pendingList.innerHTML = pending.length
-    ? pending.slice(0, 6).map((directive) => `
-        <div class="pending-item">
-          <strong>${escapeHtml(ACTION_LABELS[directive.action] || directive.action)} · ${escapeHtml(directive.targetId)}</strong>
-          <span>${escapeHtml(directive.note || "Ждёт ближайшей проверки агентом")}</span>
-        </div>
-      `).join("")
-    : '<span class="muted-copy">Нет ожидающих команд.</span>';
-}
-
-function renderActivity(activity) {
-  elements.activityList.innerHTML = activity.slice(0, 18).map((item) => `
-    <article class="activity-event ${escapeHtml(item.level || "info")}">
-      <time>${escapeHtml(relativeTime(item.ts))} · ${escapeHtml(item.actor || "agent")}</time>
-      <p>${escapeHtml(item.message)}</p>
-      <small>${escapeHtml(item.taskId || "система")}</small>
-    </article>
-  `).join("");
-}
-
-function renderAll() {
-  if (!snapshot) return;
-  const positions = layoutNodes(snapshot.tasks, snapshot.nodes);
-  elements.emptyState.hidden = snapshot.nodes.length > 0;
-  elements.revisionValue.textContent = String(snapshot.revision);
-  elements.activeValue.textContent = String(snapshot.summary.activeNodes);
-  elements.signalValue.textContent = String(snapshot.summary.pendingDirectives);
-  elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
-  renderTasks(snapshot.tasks);
-  renderTaskZones(snapshot.tasks, snapshot.nodes, positions);
-  renderEdges(snapshot.edges, snapshot.nodes, positions);
-  renderNodes(snapshot.nodes, positions, snapshot.directives);
-  renderInspector(snapshot.nodes);
-  renderPending(snapshot.directives);
-  renderActivity(snapshot.activity);
-}
-
-function showToast(message, isError = false) {
-  clearTimeout(toastTimer);
-  elements.toast.textContent = message;
-  elements.toast.classList.toggle("is-error", isError);
-  elements.toast.classList.add("is-visible");
-  toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 3200);
-}
-
-async function sendDirective(action) {
-  const selected = snapshot?.nodes.find((node) => nodeKey(node) === selectedNodeKey);
-  if (!selected) return;
-  const note = elements.ownerNote.value.trim();
-  if (action === "correct" && !note) {
-    showToast("Напиши, что именно нужно скорректировать.", true);
-    elements.ownerNote.focus();
+function updateFloatingRelationCaptions(timestamp = performance.now()) {
+  if (timestamp - relationCaptionLastFrame < RELATION_CAPTION_FRAME_MS - .5) {
+    relationCaptionFrame = requestAnimationFrame(updateFloatingRelationCaptions);
     return;
   }
-  if (action === "rollback" && !window.confirm(`Откатить только изменения, относящиеся к «${selected.label}»?`)) return;
-
-  try {
-    const response = await fetch("/api/directives", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action,
-        note,
-        taskId: selected.taskId,
-        targetId: selected.id,
-        targetKind: "node",
-        canvasRevision: snapshot.revision,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      if (response.status === 409) await pollState(true);
-      throw new Error(result.error || "Не удалось отправить команду");
+  relationCaptionFrame = null;
+  relationCaptionLastFrame = timestamp;
+  if (!relationCaptions.length || !transform.scale) return;
+  const rect = elements.viewport.getBoundingClientRect();
+  const padding = 12 / transform.scale;
+  const viewport = {
+    x: -transform.x / transform.scale + padding,
+    y: -transform.y / transform.scale + padding,
+    width: Math.max(0, rect.width / transform.scale - padding * 2),
+    height: Math.max(0, rect.height / transform.scale - padding * 2),
+  };
+  const captionBoxes = [];
+  const setHidden = (element, hidden) => {
+    if (hidden && !element.hasAttribute("hidden")) element.setAttribute("hidden", "");
+    if (!hidden && element.hasAttribute("hidden")) element.removeAttribute("hidden");
+  };
+  for (const caption of relationCaptions) {
+    if (caption.muted && selectedArea !== "all") {
+      setHidden(caption.element, true);
+      continue;
     }
-    elements.ownerNote.value = "";
-    showToast(`Команда «${ACTION_LABELS[action] || action}» отправлена · ${result.directiveId.slice(0, 18)}…`);
-    await pollState(true);
-  } catch (error) {
-    showToast(error.message, true);
+    const outsideViewport = caption.bounds.x > viewport.x + viewport.width
+      || caption.bounds.x + caption.bounds.width < viewport.x
+      || caption.bounds.y > viewport.y + viewport.height
+      || caption.bounds.y + caption.bounds.height < viewport.y;
+    if (outsideViewport) {
+      setHidden(caption.element, true);
+      continue;
+    }
+    const placement = chooseFloatingCaption({
+      samples: caption.samples,
+      currentProgress: caption.currentProgress,
+      width: caption.width,
+      height: caption.height,
+      viewport,
+      obstacles: relationObstacles,
+      occupied: captionBoxes,
+    });
+    if (!placement) {
+      setHidden(caption.element, true);
+      continue;
+    }
+    caption.currentProgress = placement.progress;
+    captionBoxes.push(placement.box);
+    setHidden(caption.element, false);
+    const nextTransform = `translate(${placement.x} ${placement.y}) rotate(${placement.angle})`;
+    if (caption.element.getAttribute("transform") !== nextTransform) caption.element.setAttribute("transform", nextTransform);
   }
 }
 
-async function pollState(force = false) {
+function scheduleRelationCaptionUpdate() {
+  if (relationCaptionFrame !== null) return;
+  relationCaptionFrame = requestAnimationFrame(updateFloatingRelationCaptions);
+}
+
+function renderEntities(positions) {
+  const activeIds = new Set(snapshot.activeEntityIds || []);
+  elements.entityLayer.innerHTML = "";
+  snapshot.entities.forEach((entity) => {
+    const p = positions.get(entity.id); if (!p) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.entityId = entity.id;
+    button.dataset.areaId = entity.areaId;
+    button.className = `project-entity ${entity.status} ${activeIds.has(entity.id) ? "has-active-work" : ""} ${selectedArea !== "all" && selectedArea !== entity.areaId ? "is-muted" : ""}`;
+    button.style.cssText = `left:${p.x}px;top:${p.y}px`;
+    button.innerHTML = `<span class="entity-state">${entity.status === "problem" ? "ПРОБЛЕМА" : entity.status === "disabled" ? "ОТКЛЮЧЕНО" : entity.status === "planned" ? "ПЛАН" : "РАБОТАЕТ"}</span><strong>${escapeHtml(entity.label)}</strong><small>${escapeHtml(entity.path || entity.purpose || "смысловая сущность")}</small><i></i>`;
+    button.addEventListener("pointerdown", (event) => beginLayoutDrag(event, "entity", entity.id));
+    button.addEventListener("click", (event) => { event.stopPropagation(); if (performance.now() >= suppressEntityClickUntil) showPassport(entity); });
+    elements.entityLayer.append(button);
+  });
+}
+
+function renderWork(positions) {
+  elements.workLayer.innerHTML = "";
+  activeWork().forEach((item) => {
+    const p = positions.get(item.id); if (!p) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `work-satellite ${item.status} ${item.session ? "has-session" : ""}`;
+    button.style.cssText = `left:${p.x}px;top:${p.y}px`;
+    button.title = item.session ? "Двойной клик: открыть рабочую сессию" : "Рабочая сессия не привязана";
+    button.innerHTML = `<i></i><span><small>${escapeHtml(item.actor || "agent")} · ${item.status === "active" ? "В РАБОТЕ" : item.status === "blocked" ? "ЖДЁТ" : "ПЛАН"}</small><strong>${escapeHtml(item.title)}</strong></span><b>↗</b>`;
+    button.addEventListener("click", (event) => event.stopPropagation());
+    button.addEventListener("dblclick", async (event) => { event.preventDefault(); event.stopPropagation(); await openWork(item); });
+    elements.workLayer.append(button);
+  });
+}
+
+function renderTree() {
+  elements.projectCount.textContent = String(snapshot.entities.length);
+  elements.projectTree.innerHTML = snapshot.areas.map((area) => {
+    const entities = snapshot.entities.filter((entity) => entity.areaId === area.id);
+    return `<section class="tree-area"><button data-area="${escapeHtml(area.id)}" class="${selectedArea === area.id ? "is-active" : ""}" type="button"><span><strong>${escapeHtml(area.title)}</strong><small>${entities.length} сущностей</small></span><b>›</b></button><div>${entities.map((entity) => `<button data-entity="${escapeHtml(entity.id)}" type="button"><i class="${escapeHtml(entity.status)}"></i>${escapeHtml(entity.label)}</button>`).join("")}</div></section>`;
+  }).join("");
+  elements.projectTree.querySelectorAll("[data-area]").forEach((button) => button.addEventListener("click", () => selectArea(button.dataset.area)));
+  elements.projectTree.querySelectorAll("[data-entity]").forEach((button) => button.addEventListener("click", () => showPassport(snapshot.entities.find((item) => item.id === button.dataset.entity))));
+}
+
+function showPassport(entity) {
+  if (!entity) return;
+  selectedEntity = entity.id;
+  const area = snapshot.areas.find((item) => item.id === entity.areaId);
+  const works = activeWork().filter((item) => item.targets?.includes(entity.id));
+  elements.passport.hidden = false;
+  elements.passportArea.textContent = area?.title || "СУЩНОСТЬ";
+  elements.passportTitle.textContent = entity.label;
+  elements.passportPurpose.textContent = entity.purpose || entity.note || "Краткое назначение ещё не описано.";
+  const facts = [
+    ["Вход", (entity.inputs || []).join(", ") || "—"], ["Результат", (entity.outputs || []).join(", ") || "—"],
+    ["Зависит от", (entity.dependsOn || []).join(", ") || "—"], ["Путь", entity.path || "—"],
+    ["Сейчас", works.map((item) => item.title).join(", ") || "нет активных задач"],
+  ];
+  elements.passportFacts.innerHTML = facts.map(([key, value]) => `<div><dt>${key}</dt><dd>${escapeHtml(value)}</dd></div>`).join("");
+}
+
+function renderNow() {
+  const items = activeWork();
+  elements.nowCount.textContent = String(items.length);
+  elements.nowList.innerHTML = items.length ? items.map((item) => {
+    const targets = (item.targets || []).map((id) => snapshot.entities.find((entity) => entity.id === id)?.label).filter(Boolean).join(" · ");
+    return `<button data-work="${escapeHtml(item.id)}" class="${escapeHtml(item.status)}" type="button"><i></i><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.actor || "agent")} · ${escapeHtml(targets)}</small></span></button>`;
+  }).join("") : `<p class="empty-copy">Активной работы нет.</p>`;
+  elements.nowList.querySelectorAll("[data-work]").forEach((button) => button.addEventListener("dblclick", () => openWork(items.find((item) => item.id === button.dataset.work))));
+}
+
+function renderActivity() {
+  const relevant = (snapshot.activity || []).filter((item) => ["area.upsert", "entity.upsert", "relation.upsert", "work.upsert", "activity.log"].includes(item.type)).slice(0, 7);
+  elements.activityList.innerHTML = relevant.map((item) => `<article class="${escapeHtml(item.level)}"><i></i><span><small>${escapeHtml(relativeTime(item.ts))} · ${escapeHtml(item.actor || "agent")}</small><p>${escapeHtml(item.message)}</p></span></article>`).join("");
+}
+
+function render() {
+  const positions = layout();
+  elements.areaValue.textContent = String(snapshot.areas.length);
+  elements.entityValue.textContent = String(snapshot.entities.length);
+  elements.activeValue.textContent = String(snapshot.summary.activeWork || 0);
+  elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
+  elements.emptyState.hidden = snapshot.semantic;
+  renderAreas(positions.areaPositions); renderRelations(positions.areaPositions, positions.entityPositions, positions.workPositions);
+  renderEntities(positions.entityPositions); renderWork(positions.workPositions); renderTree(); renderNow(); renderActivity();
+}
+
+function selectArea(id) {
+  selectedArea = id;
+  elements.allProject.classList.toggle("is-active", id === "all");
+  elements.canvasTitle.textContent = id === "all" ? "Весь проект" : snapshot.areas.find((area) => area.id === id)?.title || "Область";
+  render();
+  requestAnimationFrame(fitView);
+}
+
+function updateTransform() {
+  const pixelRatio = window.devicePixelRatio || 1;
+  const crispX = Math.round(transform.x * pixelRatio) / pixelRatio;
+  const crispY = Math.round(transform.y * pixelRatio) / pixelRatio;
+  elements.world.style.zoom = String(transform.scale);
+  elements.world.style.transform = `translate(${crispX / transform.scale}px, ${crispY / transform.scale}px)`;
+  scheduleRelationCaptionUpdate();
+}
+function zoomAt(clientX, clientY, factor) {
+  const rect = elements.viewport.getBoundingClientRect();
+  const nextScale = Math.min(1.5, Math.max(.015, transform.scale * factor));
+  transform = anchoredZoomTransform(transform, nextScale, { x: clientX - rect.left, y: clientY - rect.top });
+  updateTransform();
+}
+function zoomAtViewportCenter(factor) {
+  const rect = elements.viewport.getBoundingClientRect();
+  zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
+}
+function fitView() {
+  const rect = elements.viewport.getBoundingClientRect();
+  const area = selectedArea === "all" ? null : snapshot.areas.find((item) => item.id === selectedArea);
+  const positions = layout().areaPositions;
+  const box = area ? positions.get(area.id) : { x: 0, y: 0, width: worldSize.width, height: worldSize.height };
+  const scale = Math.min(1.2, Math.max(.015, Math.min(rect.width / (box.width + 90), rect.height / (box.height + 90)) * .94));
+  transform = { scale, x: (rect.width - box.width * scale) / 2 - box.x * scale, y: (rect.height - box.height * scale) / 2 - box.y * scale };
+  updateTransform();
+}
+
+function showToast(message, error = false) {
+  clearTimeout(toastTimer); elements.toast.textContent = message; elements.toast.className = `toast is-visible ${error ? "is-error" : ""}`;
+  toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 3500);
+}
+
+function dragElements(kind, id) {
+  if (kind === "entity") return [...elements.entityLayer.querySelectorAll(`[data-entity-id="${CSS.escape(id)}"]`)];
+  return [
+    ...elements.areaLayer.querySelectorAll(`[data-area-id="${CSS.escape(id)}"]`),
+    ...elements.entityLayer.querySelectorAll(`[data-area-id="${CSS.escape(id)}"]`),
+  ];
+}
+
+function beginLayoutDrag(event, kind, id) {
+  if (event.button !== 0 || layoutSaving || !currentLayout) return;
+  event.preventDefault(); event.stopPropagation();
+  const sourcePositions = kind === "area"
+    ? [
+      { kind: "area", id, ...currentLayout.areaPositions.get(id) },
+      ...snapshot.entities.filter((entity) => entity.areaId === id).map((entity) => ({ kind: "entity", id: entity.id, ...currentLayout.entityPositions.get(entity.id) })),
+    ]
+    : [{ kind: "entity", id, ...currentLayout.entityPositions.get(id) }];
+  layoutDrag = { kind, id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false, sourcePositions, elements: dragElements(kind, id), capture: event.currentTarget };
+  layoutDrag.capture.setPointerCapture(event.pointerId);
+  layoutDrag.elements.forEach((element) => element.classList.add("is-layout-dragging"));
+}
+
+function moveLayoutDrag(event) {
+  if (!layoutDrag || event.pointerId !== layoutDrag.pointerId) return;
+  const dx = (event.clientX - layoutDrag.startX) / transform.scale;
+  const dy = (event.clientY - layoutDrag.startY) / transform.scale;
+  layoutDrag.moved ||= Math.hypot(event.clientX - layoutDrag.startX, event.clientY - layoutDrag.startY) > 4;
+  if (!layoutDrag.moved) return;
+  const preview = `translate(${dx}px, ${dy}px)`;
+  layoutDrag.elements.forEach((element) => { element.style.transform = preview; });
+}
+
+async function endLayoutDrag(event) {
+  if (!layoutDrag || event.pointerId !== layoutDrag.pointerId) return;
+  const drag = layoutDrag; layoutDrag = null;
+  drag.elements.forEach((element) => { element.classList.remove("is-layout-dragging"); element.style.transform = ""; });
+  if (!drag.moved) return;
+  suppressEntityClickUntil = performance.now() + 250;
+  const dx = (event.clientX - drag.startX) / transform.scale;
+  const dy = (event.clientY - drag.startY) / transform.scale;
+  const items = drag.sourcePositions.map((item) => ({ kind: item.kind, id: item.id, x: item.x + dx, y: item.y + dy }));
+  for (const item of items) {
+    const target = item.kind === "area" ? snapshot.areas.find((area) => area.id === item.id) : snapshot.entities.find((entity) => entity.id === item.id);
+    if (target) { target.x = item.x; target.y = item.y; }
+  }
+  render();
+  layoutSaving = true;
   try {
+    const response = await fetch("/api/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ canvasRevision: snapshot.revision, items }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Не удалось сохранить раскладку");
+    snapshot.revision = result.revision;
+    showToast(drag.kind === "area" ? "Область и её ноды перемещены" : "Положение ноды сохранено");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    layoutSaving = false;
+    await poll(true);
+  }
+}
+
+async function openWork(item) {
+  if (!item?.session) return showToast("Агент не привязал рабочую сессию к этой задаче.", true);
+  try {
+    const response = await fetch("/api/sessions/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workId: item.id, canvasRevision: snapshot.revision }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Не удалось открыть сессию");
+    if (result.outcome === "resume") {
+      await navigator.clipboard.writeText(result.command).catch(() => {});
+      showToast(`${result.label}: команда resume скопирована — ${result.command}`);
+    } else if (result.outcome === "surface-opened") showToast("Kimi Work открыт. Выберите указанный диалог по названию.");
+    else showToast(`${result.label}: открываю «${result.title || item.title}».`);
+  } catch (error) { showToast(error.message, true); }
+}
+
+async function poll(force = false) {
+  if (layoutDrag || layoutSaving) return;
+  try {
+    if (!force && snapshot) {
+      const revisionResponse = await fetch(`/api/revision?t=${Date.now()}`, { cache: "no-store" });
+      if (!revisionResponse.ok) throw new Error(`HTTP ${revisionResponse.status}`);
+      const revision = await revisionResponse.json();
+      if (revision.revision === snapshot.revision) {
+        elements.connection.className = "connection is-online"; elements.connection.querySelector("b").textContent = "онлайн";
+        elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
+        return;
+      }
+    }
     const response = await fetch(`/api/state?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const next = await response.json();
-    elements.connectionStatus.className = "connection is-online";
-    elements.connectionStatus.querySelector("span").textContent = "онлайн";
-    if (force || !snapshot || next.revision !== snapshot.revision) {
-      snapshot = next;
-      renderAll();
-      if (!hasFitOnce && snapshot.nodes.length) {
-        hasFitOnce = true;
-        requestAnimationFrame(() => fitView());
-      }
-    } else {
-      elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
-    }
-  } catch (error) {
-    elements.connectionStatus.className = "connection is-offline";
-    elements.connectionStatus.querySelector("span").textContent = "нет связи";
-  }
+    elements.connection.className = "connection is-online"; elements.connection.querySelector("b").textContent = "онлайн";
+    if (force || !snapshot || next.revision !== snapshot.revision) { snapshot = next; render(); if (!fitDone && snapshot.semantic) { fitDone = true; requestAnimationFrame(fitView); } }
+    else elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
+  } catch { elements.connection.className = "connection is-offline"; elements.connection.querySelector("b").textContent = "нет связи"; }
 }
 
-elements.viewport.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0 || event.target.closest(".repo-node")) return;
-  event.preventDefault();
-  document.getSelection()?.removeAllRanges();
-  isPanning = true;
-  panOrigin = { clientX: event.clientX, clientY: event.clientY, x: transform.x, y: transform.y };
-  elements.viewport.classList.add("is-panning");
-  elements.viewport.setPointerCapture(event.pointerId);
-});
-
-elements.viewport.addEventListener("pointermove", (event) => {
-  if (!isPanning || !panOrigin) return;
-  transform.x = panOrigin.x + event.clientX - panOrigin.clientX;
-  transform.y = panOrigin.y + event.clientY - panOrigin.clientY;
-  updateTransform();
-});
-
-function endPan() {
-  if (!isPanning && !panOrigin) return;
-  isPanning = false;
-  panOrigin = null;
-  elements.viewport.classList.remove("is-panning");
-}
-
-elements.viewport.addEventListener("pointerup", endPan);
-elements.viewport.addEventListener("pointercancel", endPan);
-elements.viewport.addEventListener("lostpointercapture", endPan);
-
-elements.viewport.addEventListener("wheel", (event) => {
-  event.preventDefault();
-  zoomAt(transform.scale * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY);
-}, { passive: false });
-
-elements.viewport.addEventListener("dblclick", () => fitView());
-document.querySelector("#fitView").addEventListener("click", () => fitView());
-document.querySelector("#zoomIn").addEventListener("click", () => {
-  const rect = elements.viewport.getBoundingClientRect();
-  zoomAt(transform.scale * 1.14, rect.left + rect.width / 2, rect.top + rect.height / 2);
-});
-document.querySelector("#zoomOut").addEventListener("click", () => {
-  const rect = elements.viewport.getBoundingClientRect();
-  zoomAt(transform.scale * 0.86, rect.left + rect.width / 2, rect.top + rect.height / 2);
-});
-
-document.querySelectorAll("[data-action]").forEach((button) => {
-  button.addEventListener("click", () => sendDirective(button.dataset.action));
-});
-
-document.querySelector('[data-task="all"]').addEventListener("click", () => {
-  focusedTaskId = "all";
-  elements.canvasTitle.textContent = "Вся работа";
-  renderAll();
-  requestAnimationFrame(() => fitView());
-});
-
-window.addEventListener("resize", () => {
-  if (hasFitOnce) fitView(focusedTaskId);
-});
-
-pollState();
-setInterval(() => pollState(), 1100);
+elements.allProject.addEventListener("click", () => selectArea("all"));
+elements.closePassport.addEventListener("click", () => { selectedEntity = null; elements.passport.hidden = true; });
+$("#fitView").addEventListener("click", fitView);
+$("#zoomIn").addEventListener("click", () => zoomAtViewportCenter(1.16));
+$("#zoomOut").addEventListener("click", () => zoomAtViewportCenter(1 / 1.16));
+elements.viewport.addEventListener("wheel", (event) => { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY > 0 ? .9 : 1.1); }, { passive: false });
+elements.viewport.addEventListener("pointerdown", (event) => { if (event.button !== 0 || event.target.closest("button")) return; window.getSelection()?.removeAllRanges(); pan = { x: event.clientX, y: event.clientY, tx: transform.x, ty: transform.y }; elements.viewport.setPointerCapture(event.pointerId); elements.viewport.classList.add("is-panning"); });
+elements.viewport.addEventListener("pointermove", (event) => { if (!pan) return; transform.x = pan.tx + event.clientX - pan.x; transform.y = pan.ty + event.clientY - pan.y; updateTransform(); });
+function endPan() { pan = null; elements.viewport.classList.remove("is-panning"); }
+elements.viewport.addEventListener("pointerup", endPan); elements.viewport.addEventListener("pointercancel", endPan); elements.viewport.addEventListener("lostpointercapture", endPan);
+elements.world.addEventListener("pointermove", moveLayoutDrag);
+elements.world.addEventListener("pointerup", endLayoutDrag);
+elements.world.addEventListener("pointercancel", endLayoutDrag);
+window.addEventListener("resize", () => { if (snapshot?.semantic) fitView(); });
+poll(true); setInterval(poll, 250);

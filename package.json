@@ -1,9 +1,17 @@
 {
   "name": "repo-canvas",
-  "version": "0.2.0",
-  "description": "A local live repository map and owner control surface for coding agents",
+  "version": "0.5.0",
+  "description": "A local semantic project map with live agent-work satellites and session jumps",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m0ast-git/repo-canvas.git"
+  },
+  "homepage": "https://github.com/m0ast-git/repo-canvas#readme",
+  "bugs": {
+    "url": "https://github.com/m0ast-git/repo-canvas/issues"
+  },
   "bin": {
     "repo-canvas": "repo-canvas/scripts/canvas.mjs"
   },
@@ -11,13 +19,17 @@
     "public",
     "repo-canvas",
     "server.mjs",
-    "README.md"
+    "README.md",
+    "INSTALL_WITH_AGENT.txt"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "start": "node server.mjs",
+    "repo-canvas": "node repo-canvas/scripts/canvas.mjs",
+    "repo-canvas:start": "node repo-canvas/scripts/canvas.mjs start",
+    "repo-canvas:check": "node repo-canvas/scripts/canvas.mjs check",
     "canvas": "node repo-canvas/scripts/canvas.mjs",
     "canvas:start": "node repo-canvas/scripts/canvas.mjs start",
     "canvas:check": "node repo-canvas/scripts/canvas.mjs check",
