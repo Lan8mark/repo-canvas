@@ -32,6 +32,10 @@ function Port({ side, port, index, total, active }) {
 
 export const EntityNode = memo(function EntityNode({ data, selected }) {
   const { entity, incoming = [], outgoing = [] } = data;
+  const logical = data.layer !== "technical";
+  const problem = entity.problem || "Проблема этого блока пока не сформулирована.";
+  const solution = entity.solution || entity.purpose || "Роль блока пока не сформулирована.";
+  const mechanism = entity.mechanism || entity.note || entity.purpose || "Технический механизм пока не описан.";
   return (
     <article
       className={`entity-node status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""} ${data.showAreaContext ? "has-area-context" : ""}`}
@@ -47,13 +51,20 @@ export const EntityNode = memo(function EntityNode({ data, selected }) {
         </span>
       </header>
       <strong>{data.label}</strong>
-      <p>{entity.purpose || entity.note || "Смысловая сущность проекта"}</p>
-      <small>{entity.path || "логический блок"}</small>
+      {logical ? <div className="node-narrative">
+        <p className="node-problem"><b>Проблема</b><span>{problem}</span></p>
+        <p className="node-solution"><b>Решение</b><span>{solution}</span></p>
+      </div> : <div className="node-technical">
+        <p>{mechanism}</p>
+        {entity.invariants?.[0] ? <p className="node-invariant"><b>Гарантия</b><span>{entity.invariants[0]}</span></p> : null}
+        <small>{entity.path || "путь не указан"}</small>
+      </div>}
     </article>
   );
 });
 
 export const AreaNode = memo(function AreaNode({ data, selected }) {
+  const logical = data.layer !== "technical";
   return (
     <section className={`area-node ${selected ? "is-selected" : ""} ${data.dimmed ? "is-dimmed" : ""}`}>
       {[Position.Top, Position.Right, Position.Bottom, Position.Left].flatMap((position) => {
@@ -65,7 +76,12 @@ export const AreaNode = memo(function AreaNode({ data, selected }) {
       })}
       <header className="area-drag-handle">
         <span><small>ОБЛАСТЬ · {data.count}</small><strong>{data.label}</strong></span>
-        <p>{data.area.note}</p>
+        <div className="area-copy">
+          {logical ? <>
+            <p><b>Проблема</b>{data.area.problem || data.area.note}</p>
+            {data.area.solution ? <p><b>Решение</b>{data.area.solution}</p> : null}
+          </> : <p>{data.area.note || data.area.solution || "Техническая граница области"}</p>}
+        </div>
       </header>
     </section>
   );

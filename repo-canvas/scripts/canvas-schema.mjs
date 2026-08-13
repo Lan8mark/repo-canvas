@@ -105,6 +105,8 @@ export function validateEvent(event) {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });
     requireString(errors, payload.title, "payload.title", { max: 240 });
     optionalString(errors, payload.note, "payload.note", 2000);
+    optionalString(errors, payload.problem, "payload.problem", 2000);
+    optionalString(errors, payload.solution, "payload.solution", 2000);
     optionalString(errors, payload.ownerTitle, "payload.ownerTitle", 240);
     optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
     for (const field of ["x", "y", "width", "height", "order"]) {
@@ -121,11 +123,15 @@ export function validateEvent(event) {
     optionalString(errors, payload.path, "payload.path", 1000);
     optionalString(errors, payload.purpose, "payload.purpose", 2000);
     optionalString(errors, payload.note, "payload.note", 2000);
+    optionalString(errors, payload.problem, "payload.problem", 2000);
+    optionalString(errors, payload.solution, "payload.solution", 2000);
+    optionalString(errors, payload.mechanism, "payload.mechanism", 3000);
     optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
     optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
     optionalStringList(errors, payload.inputs, "payload.inputs");
     optionalStringList(errors, payload.outputs, "payload.outputs");
     optionalStringList(errors, payload.dependsOn, "payload.dependsOn");
+    optionalStringList(errors, payload.invariants, "payload.invariants");
     for (const field of ["x", "y", "order"]) if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
   } else if (event.type === "entity.remove") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });
@@ -135,6 +141,7 @@ export function validateEvent(event) {
     requireString(errors, payload.from, "payload.from", { max: 128, id: true });
     requireString(errors, payload.to, "payload.to", { max: 128, id: true });
     optionalString(errors, payload.label, "payload.label", 240);
+    optionalString(errors, payload.technical, "payload.technical", 1000);
     optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
     if (!new Set(["existing", "planned"]).has(payload.status)) errors.push(`payload.status has unsupported value '${String(payload.status)}'`);
   } else if (event.type === "relation.remove") {

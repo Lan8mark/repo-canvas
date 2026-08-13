@@ -26,8 +26,9 @@ The server opens the protected loopback URL in your default browser. Keep that f
 ## What you see
 
 - project areas that group related parts of the system;
-- persistent modules, responsibilities, stores, pipeline stages and integrations;
-- meaningful runtime, data and control-flow relations;
+- problem-oriented blocks: what breaks without each block and what it changes;
+- a `Meaning / Technical` switch between newcomer logic and implementation evidence;
+- two-layer relations: why a connection matters and the concrete runtime/data mechanism;
 - a provisional work card as soon as a supported agent turn is observed;
 - live work attached to every semantic entity it affects;
 - entity passports and recent activity in the left rail;
@@ -42,7 +43,7 @@ The data model has no fixed entity cap. One Canvas can hold a small project or a
 
 ## How it works
 
-`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect inspects the repository once and builds its semantic map.
+`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect inspects the repository once and builds its semantic map. It treats the map as an explanation rather than a code inventory: every node must justify itself with a distinct problem and solution, then provide a compact mechanism, 1-3 technical invariants and an implementation anchor. Isolated cards and incomplete refresh overlays are rejected.
 
 When the Canvas server is running, Observer watches public local session journals for this repository. It creates a provisional card on the first observed turn event, then uses `gpt-5.4-mini` to classify small event deltas and attach the work to the map. On completion, Observer updates affected passports and relations when the session contains enough evidence.
 

@@ -3,7 +3,7 @@ import { MarkerType } from "@xyflow/react";
 
 const elk = new ELK();
 export const ENTITY_WIDTH = 264;
-export const LAYOUT_VERSION = "react-flow-elk-v2";
+export const LAYOUT_VERSION = "react-flow-elk-v3-narrative";
 
 const AREA_COLORS = ["#6f8fa6", "#a87969", "#7b9270", "#9a7aa8", "#b08b55", "#638f89"];
 
@@ -23,6 +23,10 @@ export function entityLabel(entity) {
 
 export function relationLabel(relation) {
   return relation?.ownerLabel || relation?.label || "связь";
+}
+
+export function relationTechnical(relation) {
+  return relation?.technical || relationLabel(relation);
 }
 
 export function activeWork(snapshot) {
@@ -49,7 +53,7 @@ function portsFor(entity, relations) {
 
 function entityHeight(entity, relations) {
   const ports = portsFor(entity, relations);
-  return Math.max(136, 76 + Math.max(ports.incoming.length, ports.outgoing.length) * 25);
+  return Math.max(206, 110 + Math.max(ports.incoming.length, ports.outgoing.length) * 25);
 }
 
 async function layoutArea(area, entities, relations) {
@@ -64,7 +68,7 @@ async function layoutArea(area, entities, relations) {
       "elk.spacing.nodeNode": "48",
       "elk.layered.spacing.nodeNodeBetweenLayers": "110",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-      "elk.padding": "[top=92,left=44,bottom=44,right=44]",
+      "elk.padding": "[top=120,left=44,bottom=44,right=44]",
     },
     children: entities.map((entity) => ({
       id: entity.id,
@@ -76,7 +80,7 @@ async function layoutArea(area, entities, relations) {
   return {
     width: Math.max(420, graph.width || 420),
     height: Math.max(290, graph.height || 290),
-    positions: new Map((graph.children || []).map((node) => [node.id, { x: node.x || 44, y: node.y || 92 }])),
+    positions: new Map((graph.children || []).map((node) => [node.id, { x: node.x || 44, y: node.y || 120 }])),
   };
 }
 
@@ -201,7 +205,7 @@ export async function buildGraph(snapshot) {
 
   const entityNodes = entities.map((entity) => {
     const areaPosition = areaPositions.get(entity.areaId) || { x: 0, y: 0 };
-    const automatic = areaLayouts.get(entity.areaId)?.positions.get(entity.id) || { x: 44, y: 92 };
+    const automatic = areaLayouts.get(entity.areaId)?.positions.get(entity.id) || { x: 44, y: 120 };
     const position = hasCurrentLayout(entity) && finite(entity.x) && finite(entity.y)
       ? { x: Number(entity.x) - areaPosition.x, y: Number(entity.y) - areaPosition.y }
       : automatic;

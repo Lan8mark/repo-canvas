@@ -103,9 +103,9 @@ Global options:
 Examples:
   repo-canvas init
   repo-canvas start
-  repo-canvas area --id knowledge --title "Knowledge base" --order 1
-  repo-canvas entity --id search --area knowledge --label "Standards search" --status operational --path src/search
-  repo-canvas relation --from search --to registry --label "reads"
+  repo-canvas area --id knowledge --title "Проверенные знания" --problem "Выводы теряются между сессиями" --solution "Система хранит только подтверждённые выводы" --order 1
+  repo-canvas entity --id search --area knowledge --label "Поиск ответов" --status operational --problem "Нужный вывод сложно найти" --solution "Поиск возвращает опубликованные знания" --mechanism "FTS index over promoted records" --invariants "Черновики не попадают в выдачу" --path src/search
+  repo-canvas relation --from search --to registry --label "читает проверенные знания" --technical "FTS query over promoted records"
   repo-canvas work --id improve-search --title "Improve matching" --targets search --status active --actor codex
   repo-canvas setup
   repo-canvas architect --refresh
@@ -209,6 +209,8 @@ if (args.root === true) {
           id: required(args, "id"),
           title: required(args, "title"),
           note: args.note || "",
+          problem: args.problem || "",
+          solution: args.solution || "",
           x: optionalNumber(args.x), y: optionalNumber(args.y),
           width: optionalNumber(args.width), height: optionalNumber(args.height),
           order: optionalNumber(args.order),
@@ -222,6 +224,10 @@ if (args.root === true) {
           path: args.path || "",
           purpose: args.purpose || "",
           note: args.note || "",
+          problem: args.problem || "",
+          solution: args.solution || "",
+          mechanism: args.mechanism || "",
+          invariants: list(args.invariants),
           inputs: list(args.inputs), outputs: list(args.outputs), dependsOn: list(args.depends),
           x: optionalNumber(args.x), y: optionalNumber(args.y), order: optionalNumber(args.order),
         });
@@ -232,6 +238,7 @@ if (args.root === true) {
           id: args.id || `${from}->${to}`,
           from, to,
           label: args.label || "",
+          technical: args.technical || "",
           status: args.status || "existing",
         });
       } else if (command === "work") {

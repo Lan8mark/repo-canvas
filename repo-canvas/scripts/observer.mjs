@@ -20,9 +20,11 @@ function workId(sessionId, turnId) {
 
 function compactMap(snapshot) {
   return {
-    areas: snapshot.areas.map(({ id, title, note }) => ({ id, title, note })),
-    entities: snapshot.entities.map(({ id, areaId, label, status, purpose }) => ({ id, areaId, label, status, purpose })),
-    relations: snapshot.relations.map(({ id, from, to, label, status }) => ({ id, from, to, label, status })),
+    areas: snapshot.areas.map(({ id, title, problem, solution }) => ({ id, title, problem, solution })),
+    entities: snapshot.entities.map(({ id, areaId, label, status, problem, solution, mechanism }) => ({
+      id, areaId, label, status, problem, solution, mechanism,
+    })),
+    relations: snapshot.relations.map(({ id, from, to, label, technical, status }) => ({ id, from, to, label, technical, status })),
   };
 }
 
@@ -40,6 +42,8 @@ Rules:
 - remove an entity only when the session establishes that the concept itself was eliminated or merged away;
 - rename, move or reimplementation keeps the stable entity id;
 - if evidence is insufficient, leave architecture unchanged;
+- preserve the map's two layers when architecture genuinely changes: problem/solution are plain-language logic; mechanism/invariants and relation technical are concrete implementation evidence;
+- never replace plain-language logic with code vocabulary from the session;
 - for a final successful turn use done; for abort use stopped; otherwise active or blocked;
 - return required structured output only.
 

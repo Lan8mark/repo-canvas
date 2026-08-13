@@ -54,6 +54,9 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .focus-toolbar.bridge-toolbar b{padding:0 9px;font:600 8px "JetBrains Mono";color:#6b574b}
 .edge-label.edge-label{background:#e8dfd6;border-color:#b5a396;border-radius:6px;padding:5px 9px;font:500 8px "JetBrains Mono"}
 .react-flow .react-flow__edge-semantic .react-flow__edge-path{stroke-linejoin:miter;shape-rendering:geometricPrecision}
+.canvas-toolbar .layer-switch{display:flex;align-items:center;padding:3px;border:1px solid #bcaea2;border-radius:12px;background:#d7cec5}
+.canvas-toolbar .layer-switch button{height:27px;border:0;background:transparent;padding:0 10px;box-shadow:none}
+.canvas-toolbar .layer-switch button.is-active{background:#f3e9df;color:#9b4b25;box-shadow:0 2px 7px rgba(67,48,35,.12)}
 .entity-node.has-area-context{border-top-color:var(--area-color)}
 .entity-meta{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
 .area-context{display:flex;align-items:center;gap:5px;min-width:0;max-width:132px;padding:4px 7px;border:1px solid color-mix(in srgb,var(--area-color) 24%,transparent);border-radius:999px;background:color-mix(in srgb,var(--area-color) 8%,#fff);font:600 7px "JetBrains Mono";letter-spacing:.02em;color:#756d67}
@@ -64,9 +67,29 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .area-node.area-node>header p{font-size:10px;line-height:1.4}
 .entity-status.entity-status{font-size:8px}
 .live-badge.live-badge{font-size:7px}
-.entity-node.entity-node>strong{font-size:14px;margin-top:13px}
-.entity-node.entity-node>p{font-size:10px;line-height:1.45}
-.entity-node.entity-node>small{font-size:7px}
+.entity-node.entity-node>strong{display:-webkit-box;min-height:34px;margin-top:13px;font-size:14px;line-height:1.2;white-space:normal;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.entity-node .node-narrative{display:grid;gap:7px;margin-top:9px}
+.entity-node .node-narrative p{display:grid;grid-template-columns:47px minmax(0,1fr);gap:6px;margin:0;font-size:9px;line-height:1.35}
+.entity-node .node-narrative p b{font:600 6px "JetBrains Mono";text-transform:uppercase;letter-spacing:.06em;color:#9a6f59;padding-top:2px}
+.entity-node .node-narrative p span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#625a54}
+.entity-node .node-narrative .node-solution b{color:#378d6b}
+.entity-node .node-technical{display:grid;gap:7px;margin-top:9px}
+.entity-node .node-technical>p{margin:0;font-size:9px;line-height:1.4;color:#625a54;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.entity-node .node-technical .node-invariant{display:grid;grid-template-columns:45px minmax(0,1fr);gap:6px;padding-top:6px;border-top:1px solid #ded3c9;-webkit-line-clamp:unset}
+.entity-node .node-technical .node-invariant b{font:600 6px "JetBrains Mono";text-transform:uppercase;color:#378d6b}
+.entity-node .node-technical small{font:500 7px "JetBrains Mono";color:#9b8f86;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.area-node.area-node>header{align-items:flex-start}
+.area-node .area-copy{display:grid;gap:5px;max-width:440px}
+.area-node.area-node .area-copy p{display:grid;grid-template-columns:53px minmax(0,1fr);gap:7px;max-width:none;margin:0;text-align:left;font-size:9px;line-height:1.35;color:#7c7067}
+.area-node .area-copy b{font:600 6px "JetBrains Mono";text-transform:uppercase;letter-spacing:.06em;color:#9a6f59;padding-top:2px}
+.area-node .area-copy p+ p b{color:#378d6b}
+.inspector .inspector-narrative{padding:12px;border:1px solid #c8bbb0;border-radius:12px;background:#ddd4cb}
+.inspector .inspector-narrative.solution{background:#d8ddd6}
+.inspector .inspector-narrative h3{margin:0 0 7px}
+.inspector .inspector-narrative p{margin:0;font-size:10px;line-height:1.5;color:#5f5650}
+.inspector .invariant-list{display:grid;gap:7px;margin:8px 0 0;padding:0;list-style:none}
+.inspector .invariant-list li{position:relative;padding:8px 9px 8px 22px;border-radius:9px;background:#dcd3ca;font-size:9px;line-height:1.4}
+.inspector .invariant-list li::before{content:"✓";position:absolute;left:8px;color:#378d6b;font-weight:700}
 .react-flow__controls.react-flow__controls,.react-flow__minimap.react-flow__minimap{border-color:#a99a8e!important;background:#cec5bc!important}
 .react-flow__controls .react-flow__controls-button{background:#e5ddd5!important;border-bottom-color:#b9aa9e!important}
 .rename-modal.rename-modal{background:#e9e1d9;border-color:#b6a89c}

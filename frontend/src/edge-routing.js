@@ -1,7 +1,7 @@
 const NODE_WIDTH = 264;
 const EDGE_STUB = 24;
 const LABEL_MIN_WIDTH = 88;
-const LABEL_MAX_WIDTH = 280;
+const LABEL_MAX_WIDTH = 550;
 
 export function relationLabelWidth(label) {
   return Math.min(LABEL_MAX_WIDTH, Math.max(LABEL_MIN_WIDTH, String(label || "").length * 5.35 + 26));

@@ -24,6 +24,11 @@ function relativeTime(value) {
 
 function Icon({ children }) { return <span aria-hidden="true">{children}</span>; }
 
+function relationText(relation, layer) {
+  if (layer === "technical") return relation?.technical || relation?.ownerLabel || relation?.label || "техническая связь";
+  return relation?.ownerLabel || relation?.label || "связано";
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -32,6 +37,7 @@ export default function App() {
   const [selectedWorkId, setSelectedWorkId] = useState(null);
   const [selectedBridge, setSelectedBridge] = useState(null);
   const [direction, setDirection] = useState("all");
+  const [informationLayer, setInformationLayer] = useState("logic");
   const [online, setOnline] = useState(true);
   const [message, setMessage] = useState(null);
   const [rename, setRename] = useState(null);
@@ -131,7 +137,11 @@ export default function App() {
     const focusedRelationIds = new Set(focusRelationItems.map((relation) => relation.id));
     const activeIds = new Set(snapshot.activeEntityIds || []);
     const focusPositions = new Map();
-    const columnOffset = focusColumnOffset(focusRelationItems);
+    const columnOffset = focusColumnOffset(focusRelationItems.map((relation) => ({
+      ...relation,
+      label: relationText(relation, informationLayer),
+      ownerLabel: undefined,
+    })));
 
     const placeColumn = (ids, x, centerY, nodeById) => {
       const gap = 52;
@@ -210,6 +220,7 @@ export default function App() {
             ...node.data,
             focused: entityId === selectedId,
             activeWork: entityId ? activeIds.has(entityId) : false,
+            layer: informationLayer,
             showAreaContext: Boolean(hasFocus && entityId && visible.has(entityId)),
             focusedRelationIds: hasFocus ? focusedRelationIds : null,
             dimmed: hasFocus && (entityId ? !visible.has(entityId) : workId ? !workVisible : node.type === "area"),
@@ -220,13 +231,14 @@ export default function App() {
         const focused = focusedRelations.has(edge.id);
         return {
           ...edge,
+          label: edge.data?.relation ? relationText(edge.data.relation, informationLayer) : edge.label,
           className: [edge.className, focused ? "edge-is-focused" : hasFocus ? "edge-is-dimmed" : ""].filter(Boolean).join(" "),
           data: {
             ...edge.data,
             focused,
             dimmed: hasFocus && !focused,
-            onRename: edge.data?.relation
-              ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: edge.label })
+            onRename: edge.data?.relation && informationLayer === "logic"
+              ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: relationText(edge.data.relation, "logic") })
               : undefined,
             onOpen: edge.type === "areaLink" && edge.data?.relations?.length
               ? () => {
@@ -244,7 +256,7 @@ export default function App() {
         };
       }),
     };
-  }, [snapshot, nodes, edges, selectedId, selectedBridge, direction, layoutUnlocked]);
+  }, [snapshot, nodes, edges, selectedId, selectedBridge, direction, layoutUnlocked, informationLayer]);
 
   const onNodeClick = useCallback((_, node) => {
     if (node.type === "entity") { setSelectedId(node.id); setSelectedWorkId(null); setSelectedBridge(null); }
@@ -267,7 +279,7 @@ export default function App() {
       if (focusNodes.length) fitView({ nodes: focusNodes, padding: .14, maxZoom: .82, duration: 500 });
     }, 280);
     return () => window.clearTimeout(timer);
-  }, [selectedId, selectedBridge, direction, snapshot, getNodes, fitView]);
+  }, [selectedId, selectedBridge, direction, informationLayer, snapshot, getNodes, fitView]);
 
   useEffect(() => {
     const focused = Boolean(selectedId || selectedBridge);
@@ -390,6 +402,10 @@ export default function App() {
           <header className="canvas-toolbar">
             <span><small>АРХИТЕКТУРА И ТЕКУЩАЯ РАБОТА</small><h1>{selectedEntity ? entityLabel(selectedEntity) : selectedBridge ? `${areaTitle(selectedBridge.sourceArea)} ↔ ${areaTitle(selectedBridge.targetArea)}` : "Весь проект"}</h1></span>
             <nav>
+              <div className="layer-switch" aria-label="Слой информации">
+                <button type="button" className={informationLayer === "logic" ? "is-active" : ""} onClick={() => setInformationLayer("logic")}>Смысл</button>
+                <button type="button" className={informationLayer === "technical" ? "is-active" : ""} onClick={() => setInformationLayer("technical")}>Техника</button>
+              </div>
               <button type="button" title="Обновить данные" onClick={() => refresh(true)}><Icon>↻</Icon></button>
               <button type="button" className="regenerate" disabled={regenerating} onClick={regenerate}>{regenerating ? "Карта перестраивается…" : "Повторная генерация"}</button>
               <button
@@ -441,10 +457,16 @@ export default function App() {
         <aside className={`inspector ${selectedEntity || selectedWork || selectedBridge ? "is-open" : ""}`}>
           {selectedEntity ? <>
             <header><span><small>{areaTitle(selectedArea)}</small><strong>{entityLabel(selectedEntity)}</strong></span><button onClick={() => setSelectedId(null)}>×</button></header>
-            <p className="inspector-purpose">{selectedEntity.purpose || selectedEntity.note || "Назначение пока не описано."}</p>
             <div className="inspector-status"><span className={`status-${selectedEntity.status}`}>{selectedEntity.status}</span>{currentWork.length ? <span className="live">в работе</span> : null}</div>
-            <section><h3>Связи <b>{incoming.length + outgoing.length}</b></h3>{incoming.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>←</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.from))}</strong></span></button>)}{outgoing.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.to)}><i>→</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.to))}</strong></span></button>)}</section>
-            <section><h3>Контекст</h3><dl><div><dt>Вход</dt><dd>{selectedEntity.inputs?.join(", ") || "—"}</dd></div><div><dt>Результат</dt><dd>{selectedEntity.outputs?.join(", ") || "—"}</dd></div><div><dt>Путь</dt><dd>{selectedEntity.path || "—"}</dd></div></dl></section>
+            {informationLayer === "logic" ? <>
+              <section className="inspector-narrative problem"><h3>Проблема</h3><p>{selectedEntity.problem || "Проблема пока не сформулирована."}</p></section>
+              <section className="inspector-narrative solution"><h3>Решение</h3><p>{selectedEntity.solution || selectedEntity.purpose || "Решение пока не сформулировано."}</p></section>
+            </> : <>
+              <p className="inspector-purpose">{selectedEntity.mechanism || selectedEntity.note || selectedEntity.purpose || "Технический механизм пока не описан."}</p>
+              {selectedEntity.invariants?.length ? <section><h3>Гарантии</h3><ul className="invariant-list">{selectedEntity.invariants.map((invariant) => <li key={invariant}>{invariant}</li>)}</ul></section> : null}
+              <section><h3>Техническая граница</h3><dl><div><dt>Принимает</dt><dd>{selectedEntity.inputs?.join(", ") || "—"}</dd></div><div><dt>Возвращает</dt><dd>{selectedEntity.outputs?.join(", ") || "—"}</dd></div><div><dt>Код</dt><dd>{selectedEntity.path || "—"}</dd></div></dl></section>
+            </>}
+            <section><h3>Связи <b>{incoming.length + outgoing.length}</b></h3>{incoming.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>←</i><span><small>{relationText(relation, informationLayer)}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.from))}</strong></span></button>)}{outgoing.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.to)}><i>→</i><span><small>{relationText(relation, informationLayer)}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.to))}</strong></span></button>)}</section>
             {currentWork.length ? <section><h3>Сейчас</h3>{currentWork.map((work) => <button key={work.id} onClick={() => { setSelectedWorkId(work.id); setSelectedId(null); setSelectedBridge(null); }} onDoubleClick={() => openWork(work.id)}><i className="work-dot" /><span><small>{work.actor}</small><strong>{work.title}</strong></span></button>)}</section> : null}
             <footer><button onClick={() => setRename({ kind: "entity", id: selectedEntity.id, value: entityLabel(selectedEntity) })}>Переименовать</button><small>F2</small></footer>
           </> : selectedWork ? <>
@@ -460,7 +482,7 @@ export default function App() {
             <section><h3>Точные связи <b>{selectedBridge.relations.length}</b></h3>{selectedBridge.relations.map((relation) => {
               const from = snapshot.entities.find((entity) => entity.id === relation.from);
               const to = snapshot.entities.find((entity) => entity.id === relation.to);
-              return <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>↗</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(from)} → {entityLabel(to)}</strong></span></button>;
+              return <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>↗</i><span><small>{relationText(relation, informationLayer)}</small><strong>{entityLabel(from)} → {entityLabel(to)}</strong></span></button>;
             })}</section>
             <footer><button onClick={() => setSelectedBridge(null)}>Вернуться к обзору</button></footer>
           </> : <div className="inspector-empty"><span>◎</span><strong>Выберите ноду</strong><p>Здесь появятся назначение, связи и текущая работа.</p></div>}

@@ -179,6 +179,44 @@ test("architect rejects relations to entities removed by the same refresh", () =
   }), /Unknown relation endpoint/);
 });
 
+test("complete architect refresh removes concepts omitted from its response", () => {
+  emit("area.upsert", { id: "stale-area", title: "Stale", note: "", order: 9 });
+  emit("entity.upsert", {
+    id: "stale-entity", areaId: "stale-area", label: "Stale", status: "operational",
+    path: "src/stale", purpose: "Old concept", note: "", inputs: [], outputs: [], dependsOn: [], order: 1,
+  });
+  const value = {
+    projectTitle: "Fixture", projectSummary: "Проблема проекта описана. Решение проекта описано.",
+    areas: [{
+      id: "core", title: "Понятная область",
+      problem: "Разрозненные действия могут давать разные и непроверяемые результаты.",
+      solution: "Общая область объединяет решения вокруг одного проверяемого результата.", order: 1,
+    }],
+    entities: [{
+      id: "source", areaId: "core", label: "Источник правила", status: "operational", path: "src/source",
+      problem: "Интерфейсам негде получить одинаковое правило выполнения операции.",
+      solution: "Один блок публикует общее правило для любого вызывающего интерфейса.",
+      mechanism: "Registry хранит неизменяемую спецификацию операции и её обработчик.",
+      invariants: ["Правило операции определяется только один раз."], inputs: [], outputs: ["Operation rule"], dependsOn: [], order: 1,
+    }, {
+      id: "consumer", areaId: "core", label: "Исполнитель правила", status: "operational", path: "src/consumer",
+      problem: "Вызов может обойти общее правило и получить несовместимый результат.",
+      solution: "Исполнитель всегда получает операцию из единого проверяемого источника.",
+      mechanism: "Dispatcher resolves the operation id through Registry before invoking handler.",
+      invariants: ["Неизвестный идентификатор операции отклоняется."], inputs: ["Operation id"], outputs: ["Operation result"], dependsOn: ["source"], order: 2,
+    }],
+    relations: [{
+      id: "consumer-uses-source", from: "consumer", to: "source",
+      label: "берёт единое правило", technical: "Dispatcher resolves operation id through Registry", status: "existing",
+    }],
+    removedAreaIds: [], removedEntityIds: [], removedRelationIds: [],
+  };
+
+  const events = semantic.architectureEvents(value, { refresh: true });
+  assert.ok(events.some((event) => event.type === "entity.remove" && event.payload.id === "stale-entity"));
+  assert.ok(events.some((event) => event.type === "area.remove" && event.payload.id === "stale-area"));
+});
+
 test("completed observer work may remain provisional when no semantic target was established", () => {
   const [event] = semantic.observerEvents({
     workTitle: "Repository-wide review", workSummary: "No single semantic target was established",
