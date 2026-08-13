@@ -31,7 +31,24 @@ There is no semantic entity limit. The same canvas can represent four modules or
 
 ## Hand-off to another person
 
-Send two files from the release kit: `repo-canvas-0.7.0.tgz` and `INSTALL_WITH_AGENT.txt`.
+The shortest path is to send an agent this repository URL and one sentence:
+
+```text
+https://github.com/m0ast-git/repo-canvas
+Вот тулза для визуализации проекта — поставь её в этот репозиторий, настрой, построй первоначальную карту и дай мне локальную ссылку на Canvas.
+```
+
+The agent should read this README and [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt), then install the pinned release directly from GitHub:
+
+```text
+npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.7.0
+npx --no-install repo-canvas setup
+npm run repo-canvas:start
+```
+
+This is the primary installation scenario. It does not require downloading or unpacking an archive manually.
+
+For an offline hand-off, send two files from the release kit: `repo-canvas-0.7.0.tgz` and `INSTALL_WITH_AGENT.txt`.
 
 The recipient places them in an existing repository, opens one coding-agent conversation there, attaches the text file and asks the agent to install it. After installation, product agents do not need to know Repo Canvas exists.
 
