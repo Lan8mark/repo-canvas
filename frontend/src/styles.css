@@ -25,6 +25,7 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .area-link-handle{opacity:0!important;pointer-events:none!important}
 .react-flow .react-flow__edgelabel-renderer{z-index:6}
 .react-flow .area-link-edge{stroke:#887467;stroke-width:2;stroke-dasharray:3 9;opacity:.72}
+.react-flow .react-flow__edge-areaLink{cursor:pointer}
 .area-link-label{position:absolute;z-index:4;display:flex;align-items:center;gap:6px;border:2px solid #aa9585;border-radius:16px;background:#dfd4c9;color:#574a42;padding:9px 13px;font:600 9px "JetBrains Mono";white-space:nowrap;cursor:pointer;pointer-events:auto;box-shadow:0 5px 15px rgba(70,52,40,.14);transition:opacity .16s,transform .16s}
 .area-link-label:hover{background:#d4c6ba;border-color:#8d7666}
 .area-link-label span{color:#c86735}
@@ -56,6 +57,11 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .focus-toolbar.focus-toolbar{background:#e8e0d8;border-color:#b8aa9f}
 .focus-toolbar.bridge-toolbar b{padding:0 9px;font:600 8px "JetBrains Mono";color:#6b574b}
 .edge-label.edge-label{background:#e8dfd6;border-color:#b5a396}
+.entity-node.has-area-context{border-top-color:var(--area-color)}
+.entity-meta{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
+.area-context{display:flex;align-items:center;gap:5px;min-width:0;max-width:108px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--area-color) 24%,transparent);border-radius:999px;background:color-mix(in srgb,var(--area-color) 8%,#fff);font:600 6px "JetBrains Mono";letter-spacing:.02em;color:#756d67}
+.area-context i{width:5px;height:5px;flex:0 0 auto;border-radius:50%;background:var(--area-color)}
+.area-context{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .react-flow__controls.react-flow__controls,.react-flow__minimap.react-flow__minimap{border-color:#a99a8e!important;background:#cec5bc!important}
 .react-flow__controls .react-flow__controls-button{background:#e5ddd5!important;border-bottom-color:#b9aa9e!important}
 .rename-modal.rename-modal{background:#e9e1d9;border-color:#b6a89c}

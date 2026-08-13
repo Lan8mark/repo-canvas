@@ -32,6 +32,8 @@ test("React Flow layout ignores legacy coordinates and packs areas without work-
 
   assert.notDeepEqual(alpha.position, beta.position);
   assert.deepEqual(source.position, { x: 44, y: 92 });
+  assert.equal(source.data.areaLabel, "Alpha");
+  assert.match(source.data.areaColor, /^#[0-9a-f]{6}$/i);
   assert.equal(graph.nodes.some((node) => node.type === "work"), false);
   assert.equal(graph.edges.filter((edge) => edge.type === "areaLink").length, 1);
   assert.equal(graph.edges.find((edge) => edge.type === "areaLink").data.relations.length, 2);

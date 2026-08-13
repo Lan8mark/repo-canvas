@@ -34,14 +34,20 @@ export const EntityNode = memo(function EntityNode({ data, selected }) {
   const activeIncoming = data.focusedRelationIds ? incoming.filter((port) => data.focusedRelationIds.has(port.id)) : incoming;
   const activeOutgoing = data.focusedRelationIds ? outgoing.filter((port) => data.focusedRelationIds.has(port.id)) : outgoing;
   return (
-    <article className={`entity-node status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""}`}>
+    <article
+      className={`entity-node status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""} ${data.showAreaContext ? "has-area-context" : ""}`}
+      style={data.showAreaContext ? { "--area-color": data.areaColor } : undefined}
+    >
       {activeIncoming.length ? <span className="port-axis port-axis--in">IN · {activeIncoming.length}</span> : null}
       {activeOutgoing.length ? <span className="port-axis port-axis--out">OUT · {activeOutgoing.length}</span> : null}
       {incoming.map((port, index) => <Port key={port.id} side="in" port={port} index={index} total={incoming.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
       {outgoing.map((port, index) => <Port key={port.id} side="out" port={port} index={index} total={outgoing.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
       <header>
         <span className="entity-status"><i />{statusLabels[entity.status] || entity.status}</span>
-        {data.activeWork ? <span className="live-badge">в работе</span> : null}
+        <span className="entity-meta">
+          {data.showAreaContext ? <span className="area-context" title={`Область: ${data.areaLabel}`}><i />{data.areaLabel}</span> : null}
+          {data.activeWork ? <span className="live-badge">в работе</span> : null}
+        </span>
       </header>
       <strong>{data.label}</strong>
       <p>{entity.purpose || entity.note || "Смысловая сущность проекта"}</p>
@@ -103,25 +109,14 @@ export const SemanticEdge = memo(function SemanticEdge(props) {
 });
 
 export const AreaLinkEdge = memo(function AreaLinkEdge(props) {
-  const [path, labelX, labelY] = getBezierPath({ ...props, curvature: 0.2 });
-  const count = props.data?.relations?.length || 0;
-  const title = `${props.data?.sourceArea?.ownerTitle || props.data?.sourceArea?.title} ↔ ${props.data?.targetArea?.ownerTitle || props.data?.targetArea?.title}`;
-  return (
-    <>
-      <BaseEdge {...props} path={path} className={`area-link-edge ${props.data?.dimmed ? "is-dimmed" : ""}`} />
-      <EdgeLabelRenderer>
-        <button
-          type="button"
-          className={`area-link-label nodrag nopan ${props.data?.dimmed ? "is-dimmed" : ""}`}
-          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
-          title={`${title} · раскрыть точную связь`}
-          onClick={(event) => { event.stopPropagation(); props.data?.onOpen?.(); }}
-        >
-          <span>↗</span>{count} {count === 1 ? "связь" : count < 5 ? "связи" : "связей"}
-        </button>
-      </EdgeLabelRenderer>
-    </>
-  );
+  const [path] = getBezierPath({ ...props, curvature: 0.2 });
+  return <BaseEdge
+    {...props}
+    path={path}
+    interactionWidth={18}
+    className={`area-link-edge ${props.data?.dimmed ? "is-dimmed" : ""}`}
+    onClick={(event) => { event.stopPropagation(); props.data?.onOpen?.(); }}
+  />;
 });
 
 export const WorkEdge = memo(function WorkEdge(props) {

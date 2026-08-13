@@ -207,6 +207,7 @@ export default function App() {
             ...node.data,
             focused: entityId === selectedId,
             activeWork: entityId ? activeIds.has(entityId) : false,
+            showAreaContext: Boolean(hasFocus && entityId && visible.has(entityId)),
             focusedRelationIds: hasFocus ? focusedRelationIds : null,
             dimmed: hasFocus && (entityId ? !visible.has(entityId) : workId ? !workVisible : node.type === "area"),
           },

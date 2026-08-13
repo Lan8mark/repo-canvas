@@ -5,6 +5,14 @@ const elk = new ELK();
 export const ENTITY_WIDTH = 264;
 export const LAYOUT_VERSION = "react-flow-elk-v2";
 
+const AREA_COLORS = ["#6f8fa6", "#a87969", "#7b9270", "#9a7aa8", "#b08b55", "#638f89"];
+
+function areaColor(areaId = "") {
+  let hash = 0;
+  for (const character of areaId) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return AREA_COLORS[Math.abs(hash) % AREA_COLORS.length];
+}
+
 export function areaTitle(area) {
   return area?.ownerTitle || area?.title || "Область";
 }
@@ -204,7 +212,13 @@ export async function buildGraph(snapshot) {
       parentId: `area:${entity.areaId}`,
       extent: "parent",
       position,
-      data: { entity, label: entityLabel(entity), ...ports },
+      data: {
+        entity,
+        label: entityLabel(entity),
+        areaLabel: areaTitle(areas.find((area) => area.id === entity.areaId)),
+        areaColor: areaColor(entity.areaId),
+        ...ports,
+      },
       style: { width: ENTITY_WIDTH, height: entityHeight(entity, relations) },
       zIndex: 2,
     };
