@@ -2,8 +2,8 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import { MarkerType } from "@xyflow/react";
 
 const elk = new ELK();
-export const ENTITY_WIDTH = 264;
-export const LAYOUT_VERSION = "react-flow-elk-v3-narrative";
+export const ENTITY_WIDTH = 304;
+export const LAYOUT_VERSION = "react-flow-elk-v4-fluid-cards";
 
 const AREA_COLORS = ["#6f8fa6", "#a87969", "#7b9270", "#9a7aa8", "#b08b55", "#638f89"];
 
@@ -51,9 +51,42 @@ function portsFor(entity, relations) {
   return { incoming, outgoing };
 }
 
+function wrappedLines(value, capacity) {
+  const words = String(value || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 1;
+  let lines = 1;
+  let used = 0;
+  for (const word of words) {
+    const length = word.length;
+    if (used && used + 1 + length > capacity) {
+      lines += 1;
+      used = length;
+    } else {
+      used += (used ? 1 : 0) + length;
+    }
+    if (used > capacity) {
+      lines += Math.floor((used - 1) / capacity);
+      used = ((used - 1) % capacity) + 1;
+    }
+  }
+  return lines;
+}
+
+export function entityContentHeight(entity) {
+  const titleLines = wrappedLines(entityLabel(entity), 34);
+  const logicLines = wrappedLines(entity.problem, 43) + wrappedLines(entity.solution || entity.purpose, 43);
+  const technicalLines = wrappedLines(entity.mechanism || entity.note || entity.purpose, 56)
+    + wrappedLines(entity.invariants?.[0], 44)
+    + wrappedLines(entity.path, 62);
+  const titleHeight = titleLines * 17;
+  const logicHeight = 84 + titleHeight + logicLines * 13;
+  const technicalHeight = 91 + titleHeight + technicalLines * 13;
+  return Math.max(206, logicHeight, technicalHeight);
+}
+
 function entityHeight(entity, relations) {
   const ports = portsFor(entity, relations);
-  return Math.max(206, 110 + Math.max(ports.incoming.length, ports.outgoing.length) * 25);
+  return Math.max(entityContentHeight(entity), 110 + Math.max(ports.incoming.length, ports.outgoing.length) * 25);
 }
 
 async function layoutArea(area, entities, relations) {

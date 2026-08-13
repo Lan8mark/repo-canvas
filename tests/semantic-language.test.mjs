@@ -71,3 +71,13 @@ test("narrative quality gate rejects disconnected cards", () => {
     entities: [...strongMap.entities, { ...strongMap.entities[0], id: "orphan", label: "Изолированный блок" }],
   }), /must be connected/);
 });
+
+test("narrative quality gate rejects titles that belong in the body", () => {
+  assert.throws(() => validateNarrativeQuality({
+    ...strongMap,
+    entities: [{
+      ...strongMap.entities[0],
+      label: "This title contains far too many explanatory words for a card",
+    }],
+  }), /label|too explanatory/);
+});

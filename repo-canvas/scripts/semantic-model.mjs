@@ -2,7 +2,7 @@ import { appendEvents, createEvent, getSnapshot } from "./canvas-store.mjs";
 
 const id = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:>\\-]{0,127}$" };
 const stringArray = { type: "array", items: { type: "string" } };
-const shortName = { type: "string", minLength: 2, maxLength: 64 };
+const shortName = { type: "string", minLength: 2, maxLength: 56 };
 const logicalSentence = { type: "string", minLength: 24, maxLength: 220 };
 const mechanismSentence = { type: "string", minLength: 24, maxLength: 320 };
 const invariantArray = {
@@ -101,13 +101,13 @@ function requireNarrative(value, field, { min = 16, max = 280 } = {}) {
 
 export function validateNarrativeQuality(value) {
   for (const area of value.areas || []) {
-    requireNarrative(area.title, `area '${area.id}' title`, { min: 2, max: 64 });
+    requireNarrative(area.title, `area '${area.id}' title`, { min: 2, max: 56 });
     requireNarrative(area.problem, `area '${area.id}' problem`, { min: 24, max: 220 });
     requireNarrative(area.solution, `area '${area.id}' solution`, { min: 24, max: 220 });
   }
   for (const entity of value.entities || []) {
-    requireNarrative(entity.label, `entity '${entity.id}' label`, { min: 2, max: 64 });
-    if (entity.label.trim().split(/\s+/).length > 7) throw new Error(`entity '${entity.id}' label is too explanatory; move detail into solution`);
+    requireNarrative(entity.label, `entity '${entity.id}' label`, { min: 2, max: 56 });
+    if (entity.label.trim().split(/\s+/).length > 6) throw new Error(`entity '${entity.id}' label is too explanatory; move detail into solution`);
     requireNarrative(entity.problem, `entity '${entity.id}' problem`, { min: 24, max: 220 });
     requireNarrative(entity.solution, `entity '${entity.id}' solution`, { min: 24, max: 220 });
     requireNarrative(entity.mechanism, `entity '${entity.id}' mechanism`, { min: 24, max: 320 });

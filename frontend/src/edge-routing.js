@@ -1,4 +1,4 @@
-const NODE_WIDTH = 264;
+const NODE_WIDTH = 304;
 const EDGE_STUB = 24;
 const LABEL_MIN_WIDTH = 88;
 const LABEL_MAX_WIDTH = 550;

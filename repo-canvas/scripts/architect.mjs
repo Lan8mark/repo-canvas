@@ -59,6 +59,7 @@ Good two-layer example:
 Requirements:
 - stable concise ASCII ids;
 - use short Russian logical copy when repository context is Russian; keep unavoidable code identifiers only in the technical layer;
+- keep every area title and entity label within 56 characters and 6 words; move all explanation into problem and solution;
 - one compact sentence per problem, solution, mechanism and invariant;
 - name areas by the problem they resolve, not by source layout;
 - write projectSummary as two short sentences: the project problem, then its solution;

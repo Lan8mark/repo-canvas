@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { focusColumnOffset, orthogonalRelationPath, relationLabelWidth } from "../frontend/src/edge-routing.js";
-import { LAYOUT_VERSION, buildGraph } from "../frontend/src/graph.js";
+import { LAYOUT_VERSION, buildGraph, entityContentHeight } from "../frontend/src/graph.js";
 
 function snapshot(overrides = {}) {
   return {
@@ -72,4 +72,19 @@ test("focused relation routing reserves a straight caption runway", () => {
   assert.match(route.path, /^M .* H .* V .* H .* V .* H /);
   assert.ok(route.runway >= relationLabelWidth(label) + 24);
   assert.equal(route.labelY, 160);
+});
+
+test("entity cards grow with complete narrative copy", () => {
+  const short = entityContentHeight({ label: "Short", problem: "Short problem", solution: "Short solution" });
+  const long = entityContentHeight({
+    label: "A deliberately multiline but still bounded card title",
+    problem: "A long problem statement ".repeat(12),
+    solution: "A long complete solution statement ".repeat(12),
+    mechanism: "A technical mechanism with enough evidence to wrap across several lines ".repeat(8),
+    invariants: ["A complete invariant that must remain visible without an ellipsis ".repeat(5)],
+    path: "src/a/very/long/implementation/path/that/must/wrap/instead/of/disappearing.ts",
+  });
+
+  assert.equal(short, 206);
+  assert.ok(long > short + 150);
 });

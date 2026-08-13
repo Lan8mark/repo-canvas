@@ -28,6 +28,7 @@ The server opens the protected loopback URL in your default browser. Keep that f
 - project areas that group related parts of the system;
 - problem-oriented blocks: what breaks without each block and what it changes;
 - a `Meaning / Technical` switch between newcomer logic and implementation evidence;
+- fluid semantic cards that wrap every title and body in full and grow with their content and ports;
 - two-layer relations: why a connection matters and the concrete runtime/data mechanism;
 - a provisional work card as soon as a supported agent turn is observed;
 - live work attached to every semantic entity it affects;
