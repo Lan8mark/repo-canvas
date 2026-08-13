@@ -152,7 +152,7 @@ try {
     await waitFor(server, /listening at/);
     const health = await request(port, "/api/health");
     assert.equal(health.status, 200);
-    assert.equal(JSON.parse(health.body).root, fs.realpathSync(root));
+    assert.equal(JSON.parse(health.body).root, fs.realpathSync.native(root));
     const page = await request(port, "/");
     assert.equal(page.status, 200);
     assert.match(page.body, /Repo Canvas/);
