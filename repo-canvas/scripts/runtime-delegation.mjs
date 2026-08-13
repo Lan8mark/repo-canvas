@@ -24,10 +24,13 @@ export async function delegateToActiveRuntime() {
   const currentVersion = normalizeVersion(packageVersion());
   if (!activeVersion || !currentVersion || compareVersions(activeVersion, currentVersion) <= 0) return false;
 
-  const cli = path.resolve(String(pointer.cli || ""));
-  const runtimeRoot = path.join(resolveDataDirectory(projectRoot), "runtime", "versions");
+  const cliCandidate = path.resolve(String(pointer.cli || ""));
+  if (!fs.existsSync(cliCandidate)) return false;
+  const cli = fs.realpathSync.native?.(cliCandidate) || fs.realpathSync(cliCandidate);
+  const runtimeRootCandidate = path.join(resolveDataDirectory(projectRoot), "runtime", "versions");
+  const runtimeRoot = fs.realpathSync.native?.(runtimeRootCandidate) || fs.realpathSync(runtimeRootCandidate);
   const relative = path.relative(runtimeRoot, cli);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative) || !fs.existsSync(cli)) return false;
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return false;
 
   process.env.REPO_CANVAS_RUNTIME_ACTIVE = "1";
   await import(pathToFileURL(cli).href);
