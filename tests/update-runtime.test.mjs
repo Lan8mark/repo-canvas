@@ -9,6 +9,19 @@ import test from "node:test";
 import { compareVersions, normalizeVersion } from "../repo-canvas/scripts/runtime-version.mjs";
 import { releaseCandidate } from "../repo-canvas/scripts/update-service.mjs";
 
+async function removeTemporaryDirectory(directory) {
+  let lastError;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    try { fs.rmSync(directory, { recursive: true, force: true }); return; }
+    catch (error) {
+      lastError = error;
+      if (!new Set(["EPERM", "EBUSY", "ENOTEMPTY"]).has(error.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw lastError;
+}
+
 function release(version, overrides = {}) {
   return {
     tag_name: `v${version}`,
@@ -45,7 +58,7 @@ test("release discovery accepts only a newer verified official tgz", () => {
   assert.equal(releaseCandidate(wrongHost, "0.8.5"), null);
 });
 
-test("the installed bootstrap delegates commands to a newer project-local runtime", () => {
+test("the installed bootstrap delegates commands to a newer project-local runtime", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "repo-canvas-delegation-"));
   try {
     fs.mkdirSync(path.join(root, ".git"));
@@ -63,7 +76,7 @@ test("the installed bootstrap delegates commands to a newer project-local runtim
     assert.equal(result.status, 0, result.stderr);
     assert.equal(fs.readFileSync(marker, "utf8"), "delegated");
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    await removeTemporaryDirectory(root);
   }
 });
 
@@ -126,6 +139,6 @@ test("a checksum failure keeps the previous runtime and restarts the source serv
     assert.equal(fs.readFileSync(marker, "utf8"), "restarted");
   } finally {
     await new Promise((resolve) => fixture.close(resolve));
-    fs.rmSync(root, { recursive: true, force: true });
+    await removeTemporaryDirectory(root);
   }
 });
