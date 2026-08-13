@@ -1,0 +1,345 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+} from "@xyflow/react";
+import { canvasApi, reloadToken } from "./api.js";
+import { activeWork, areaTitle, buildGraph, entityLabel, neighborSet } from "./graph.js";
+import { edgeTypes, nodeTypes } from "./graph-elements.jsx";
+
+function relativeTime(value) {
+  if (!value) return "—";
+  const delta = Math.max(0, Date.now() - new Date(value).getTime());
+  if (delta < 10_000) return "сейчас";
+  if (delta < 60_000) return `${Math.floor(delta / 1000)} сек`;
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} мин`;
+  return new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function Icon({ children }) { return <span aria-hidden="true">{children}</span>; }
+
+export default function App() {
+  const [snapshot, setSnapshot] = useState(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectedWorkId, setSelectedWorkId] = useState(null);
+  const [direction, setDirection] = useState("all");
+  const [online, setOnline] = useState(true);
+  const [message, setMessage] = useState(null);
+  const [rename, setRename] = useState(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [update, setUpdate] = useState(null);
+  const [initialFit, setInitialFit] = useState(false);
+  const snapshotRef = useRef(null);
+  const busyRef = useRef(false);
+  const { fitView, getNodes, setCenter, zoomIn, zoomOut } = useReactFlow();
+
+  const notify = useCallback((text, error = false) => {
+    setMessage({ text, error });
+    window.setTimeout(() => setMessage(null), 3200);
+  }, []);
+
+  const refresh = useCallback(async (force = true) => {
+    if (busyRef.current) return;
+    try {
+      if (!force && snapshotRef.current) {
+        const revision = await canvasApi.revision();
+        if (revision.revision === snapshotRef.current.revision) { setOnline(true); return; }
+      }
+      const next = await canvasApi.state();
+      snapshotRef.current = next;
+      setSnapshot(next);
+      setOnline(true);
+    } catch (error) {
+      setOnline(false);
+      if (error.status === 401) notify("Canvas потерял локальный доступ", true);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    refresh(true);
+    const timer = window.setInterval(() => refresh(false), 900);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  useEffect(() => {
+    const onStorage = () => { reloadToken(); refresh(true); };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    let cancelled = false;
+    buildGraph(snapshot).then((graph) => {
+      if (cancelled) return;
+      setNodes(graph.nodes);
+      setEdges(graph.edges);
+      if (!initialFit) {
+        setInitialFit(true);
+        window.setTimeout(() => fitView({ padding: 0.12, duration: 500 }), 80);
+      }
+    }).catch((error) => notify(`Не удалось построить карту: ${error.message}`, true));
+    return () => { cancelled = true; };
+  }, [snapshot, setNodes, setEdges, initialFit, fitView, notify]);
+
+  useEffect(() => {
+    const key = (event) => {
+      if (event.key === "Escape") { setSelectedId(null); setSelectedWorkId(null); }
+      if (event.key === "F2" && selectedId && snapshot) {
+        event.preventDefault();
+        const entity = snapshot.entities.find((item) => item.id === selectedId);
+        if (entity) setRename({ kind: "entity", id: entity.id, value: entityLabel(entity) });
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [selectedId, snapshot]);
+
+  const selectedEntity = snapshot?.entities.find((entity) => entity.id === selectedId) || null;
+  const selectedWork = snapshot?.work.find((work) => work.id === selectedWorkId) || null;
+  const selectedArea = selectedEntity ? snapshot?.areas.find((area) => area.id === selectedEntity.areaId) : null;
+  const currentWork = selectedEntity ? activeWork(snapshot).filter((work) => work.targets?.includes(selectedEntity.id)) : [];
+  const incoming = selectedEntity ? snapshot.relations.filter((relation) => relation.to === selectedEntity.id) : [];
+  const outgoing = selectedEntity ? snapshot.relations.filter((relation) => relation.from === selectedEntity.id) : [];
+
+  const displayGraph = useMemo(() => {
+    if (!snapshot) return { nodes, edges };
+    const visible = neighborSet(snapshot, selectedId, direction);
+    const hasFocus = Boolean(selectedId);
+    const focusedRelations = new Set((snapshot.relations || [])
+      .filter((relation) => {
+        if (!selectedId) return false;
+        if (direction === "in") return relation.to === selectedId;
+        if (direction === "out") return relation.from === selectedId;
+        return relation.from === selectedId || relation.to === selectedId;
+      })
+      .map((relation) => `relation:${relation.id}`));
+    const activeIds = new Set(snapshot.activeEntityIds || []);
+
+    return {
+      nodes: nodes.map((node) => {
+        const entityId = node.type === "entity" ? node.id : null;
+        const workId = node.type === "work" ? node.id.slice(5) : null;
+        const work = workId ? snapshot.work.find((item) => item.id === workId) : null;
+        const workVisible = work?.targets?.some((id) => visible.has(id));
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            focused: entityId === selectedId,
+            activeWork: entityId ? activeIds.has(entityId) : false,
+            dimmed: hasFocus && (entityId ? !visible.has(entityId) : workId ? !workVisible : node.type === "area"),
+          },
+        };
+      }),
+      edges: edges.map((edge) => ({
+        ...edge,
+        data: {
+          ...edge.data,
+          focused: focusedRelations.has(edge.id),
+          dimmed: hasFocus && !focusedRelations.has(edge.id) && !edge.id.startsWith("work-edge:"),
+          onRename: edge.data?.relation
+            ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: edge.label })
+            : undefined,
+        },
+      })),
+    };
+  }, [snapshot, nodes, edges, selectedId, direction]);
+
+  const onNodeClick = useCallback((_, node) => {
+    if (node.type === "entity") { setSelectedId(node.id); setSelectedWorkId(null); }
+    if (node.type === "work") { setSelectedWorkId(node.id.slice(5)); setSelectedId(null); }
+  }, []);
+
+  const focusEntity = useCallback((id, center = false) => {
+    setSelectedId(id);
+    setSelectedWorkId(null);
+    if (!center) return;
+    const current = getNodes();
+    const node = current.find((item) => item.id === id);
+    if (!node) return;
+    const area = node.parentId ? current.find((item) => item.id === node.parentId) : null;
+    const x = (area?.position.x || 0) + node.position.x + (node.measured?.width || 264) / 2;
+    const y = (area?.position.y || 0) + node.position.y + (node.measured?.height || 140) / 2;
+    setCenter(x, y, { zoom: .82, duration: 500 });
+  }, [getNodes, setCenter]);
+
+  const onNodeDoubleClick = useCallback((_, node) => {
+    if (!snapshotRef.current) return;
+    if (node.type === "entity") {
+      setSelectedId(node.id);
+      const area = node.parentId ? getNodes().find((item) => item.id === node.parentId) : null;
+      const x = (area?.position.x || 0) + node.position.x + (node.measured?.width || 264) / 2;
+      const y = (area?.position.y || 0) + node.position.y + (node.measured?.height || 140) / 2;
+      setCenter(x, y, { zoom: 1, duration: 500 });
+    }
+    if (node.type === "work") openWork(node.id.slice(5));
+  }, [getNodes, setCenter]);
+
+  const saveNodePosition = useCallback(async (_, node) => {
+    if (!snapshotRef.current || node.type === "work") return;
+    busyRef.current = true;
+    try {
+      const current = getNodes();
+      const items = [];
+      if (node.type === "area") {
+        items.push({ kind: "area", id: node.id.slice(5), x: node.position.x, y: node.position.y });
+        for (const child of current.filter((item) => item.parentId === node.id && item.type === "entity")) {
+          items.push({ kind: "entity", id: child.id, x: node.position.x + child.position.x, y: node.position.y + child.position.y });
+        }
+      } else {
+        const parent = current.find((item) => item.id === node.parentId);
+        items.push({ kind: "entity", id: node.id, x: (parent?.position.x || 0) + node.position.x, y: (parent?.position.y || 0) + node.position.y });
+      }
+      await canvasApi.saveLayout(snapshotRef.current.revision, items);
+      notify(node.type === "area" ? "Область перемещена" : "Позиция сохранена");
+      await refresh(true);
+    } catch (error) { notify(error.message, true); await refresh(true); }
+    finally { busyRef.current = false; }
+  }, [getNodes, notify, refresh]);
+
+  async function openWork(workId) {
+    if (!snapshotRef.current) return;
+    try {
+      const result = await canvasApi.openWork(snapshotRef.current.revision, workId);
+      if (result.outcome === "resume") {
+        await navigator.clipboard.writeText(result.command).catch(() => {});
+        notify(`Resume-команда скопирована: ${result.command}`);
+      } else notify(`Открываю ${result.title || "рабочую сессию"}`);
+    } catch (error) { notify(error.message, true); }
+  }
+
+  async function saveRename(event) {
+    event.preventDefault();
+    const value = new FormData(event.currentTarget).get("value")?.trim();
+    if (!value || !rename || !snapshotRef.current) return;
+    busyRef.current = true;
+    try {
+      await canvasApi.rename(snapshotRef.current.revision, rename.kind, rename.id, value);
+      setRename(null); notify("Название сохранено"); await refresh(true);
+    } catch (error) { notify(error.message, true); }
+    finally { busyRef.current = false; }
+  }
+
+  async function regenerate() {
+    if (!window.confirm("Повторно прочитать репозиторий и обновить смысловую карту?")) return;
+    try {
+      const status = await canvasApi.regenerate();
+      setRegenerating(true); notify(status.started ? "Architect перестраивает карту" : "Перестройка уже идёт");
+    } catch (error) { notify(error.message, true); }
+  }
+
+  useEffect(() => {
+    if (!regenerating) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const status = await canvasApi.architectStatus();
+        if (!status.running && status.status !== "running") {
+          setRegenerating(false); window.clearInterval(timer);
+          notify(status.status === "done" ? "Карта обновлена" : `Architect: ${status.error || "ошибка"}`, status.status !== "done");
+          refresh(true);
+        }
+      } catch {}
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [regenerating, notify, refresh]);
+
+  useEffect(() => { canvasApi.updateStatus(true).then(setUpdate).catch(() => {}); }, []);
+
+  const groupedAreas = useMemo(() => (snapshot?.areas || []).map((area) => ({
+    area,
+    entities: snapshot.entities.filter((entity) => entity.areaId === area.id),
+  })), [snapshot]);
+
+  if (!snapshot) return <div className="loading-screen"><span className="brand-mark"><i /><i /><i /></span><strong>Repo Canvas</strong><small>{online ? "строим пространство проекта…" : "нет связи с локальным Canvas"}</small></div>;
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand"><span className="brand-mark"><i /><i /><i /></span><span><strong>Repo Canvas</strong><small>память проекта</small></span></div>
+        <div className="telemetry"><span><small>ОБЛАСТИ</small><strong>{snapshot.areas.length}</strong></span><span><small>СУЩНОСТИ</small><strong>{snapshot.entities.length}</strong></span><span className="hot"><small>В РАБОТЕ</small><strong>{snapshot.summary.activeWork || 0}</strong></span><span className={`connection ${online ? "is-online" : "is-offline"}`}><i />{online ? "онлайн" : "нет связи"}</span></div>
+      </header>
+
+      <main className="workspace">
+        <aside className="navigation-rail">
+          <header><span><small>ПРОЕКТ</small><strong>{snapshot.entities.length}</strong></span><button type="button" onClick={() => fitView({ padding: .12, duration: 450 })}>Вся система</button></header>
+          <div className="project-tree">
+            {groupedAreas.map(({ area, entities }) => <details key={area.id} open>
+              <summary onDoubleClick={() => setRename({ kind: "area", id: area.id, value: areaTitle(area) })}><span><strong>{areaTitle(area)}</strong><small>{entities.length} сущностей</small></span></summary>
+              {entities.map((entity) => <button key={entity.id} className={selectedId === entity.id ? "is-active" : ""} type="button" onClick={() => focusEntity(entity.id, true)}><i className={`status-${entity.status}`} />{entityLabel(entity)}</button>)}
+            </details>)}
+          </div>
+        </aside>
+
+        <section className="canvas-panel">
+          <header className="canvas-toolbar">
+            <span><small>АРХИТЕКТУРА И ТЕКУЩАЯ РАБОТА</small><h1>{selectedEntity ? entityLabel(selectedEntity) : "Весь проект"}</h1></span>
+            <nav>
+              <button type="button" title="Обновить данные" onClick={() => refresh(true)}><Icon>↻</Icon></button>
+              <button type="button" className="regenerate" disabled={regenerating} onClick={regenerate}>{regenerating ? "Карта перестраивается…" : "Повторная генерация"}</button>
+              <button type="button" onClick={() => zoomOut()} aria-label="Уменьшить">−</button>
+              <button type="button" onClick={() => fitView({ padding: .12, duration: 450 })}>Показать всё</button>
+              <button type="button" onClick={() => zoomIn()} aria-label="Увеличить">+</button>
+            </nav>
+          </header>
+          <div className="canvas-wrap">
+            {selectedId ? <div className="focus-toolbar"><span>Фокус</span>{[["in", "Входящие"], ["all", "Все"], ["out", "Исходящие"]].map(([value, label]) => <button key={value} className={direction === value ? "is-active" : ""} onClick={() => setDirection(value)}>{label}</button>)}<button onClick={() => setSelectedId(null)}>Сбросить ×</button></div> : null}
+            <ReactFlow
+              nodes={displayGraph.nodes}
+              edges={displayGraph.edges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onNodeClick={onNodeClick}
+              onNodeDoubleClick={onNodeDoubleClick}
+              onNodeDragStop={saveNodePosition}
+              onPaneClick={() => { setSelectedId(null); setSelectedWorkId(null); }}
+              minZoom={.035}
+              maxZoom={1.45}
+              selectionOnDrag
+              panOnDrag
+              elevateNodesOnSelect
+              nodesConnectable={false}
+              proOptions={{ hideAttribution: true }}
+              fitView
+            >
+              <Background gap={28} size={1} color="#ded7cf" />
+              <Controls showInteractive={false} />
+              <MiniMap pannable zoomable nodeStrokeWidth={2} />
+            </ReactFlow>
+          </div>
+        </section>
+
+        <aside className={`inspector ${selectedEntity || selectedWork ? "is-open" : ""}`}>
+          {selectedEntity ? <>
+            <header><span><small>{areaTitle(selectedArea)}</small><strong>{entityLabel(selectedEntity)}</strong></span><button onClick={() => setSelectedId(null)}>×</button></header>
+            <p className="inspector-purpose">{selectedEntity.purpose || selectedEntity.note || "Назначение пока не описано."}</p>
+            <div className="inspector-status"><span className={`status-${selectedEntity.status}`}>{selectedEntity.status}</span>{currentWork.length ? <span className="live">в работе</span> : null}</div>
+            <section><h3>Связи <b>{incoming.length + outgoing.length}</b></h3>{incoming.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.from, true)}><i>←</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.from))}</strong></span></button>)}{outgoing.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.to, true)}><i>→</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.to))}</strong></span></button>)}</section>
+            <section><h3>Контекст</h3><dl><div><dt>Вход</dt><dd>{selectedEntity.inputs?.join(", ") || "—"}</dd></div><div><dt>Результат</dt><dd>{selectedEntity.outputs?.join(", ") || "—"}</dd></div><div><dt>Путь</dt><dd>{selectedEntity.path || "—"}</dd></div></dl></section>
+            {currentWork.length ? <section><h3>Сейчас</h3>{currentWork.map((work) => <button key={work.id} onDoubleClick={() => openWork(work.id)}><i className="work-dot" /><span><small>{work.actor}</small><strong>{work.title}</strong></span></button>)}</section> : null}
+            <footer><button onClick={() => setRename({ kind: "entity", id: selectedEntity.id, value: entityLabel(selectedEntity) })}>Переименовать</button><small>F2</small></footer>
+          </> : selectedWork ? <>
+            <header><span><small>{selectedWork.actor || "agent"}</small><strong>{selectedWork.title}</strong></span><button onClick={() => setSelectedWorkId(null)}>×</button></header>
+            <p className="inspector-purpose">{selectedWork.note || "Рабочая сессия агента"}</p>
+            <div className="inspector-status"><span className="live">{selectedWork.status}</span></div>
+            <section><h3>Затрагивает</h3>{selectedWork.targets?.map((id) => <button key={id} onClick={() => { setSelectedId(id); setSelectedWorkId(null); }}><i>→</i><strong>{entityLabel(snapshot.entities.find((item) => item.id === id))}</strong></button>)}</section>
+            <footer><button disabled={!selectedWork.session} onClick={() => openWork(selectedWork.id)}>Открыть сессию ↗</button></footer>
+          </> : <div className="inspector-empty"><span>◎</span><strong>Выберите ноду</strong><p>Здесь появятся назначение, связи и текущая работа.</p></div>}
+        </aside>
+      </main>
+
+      <div className="activity-strip"><span><i className={online ? "online" : ""} />{relativeTime(snapshot.updatedAt)}</span><p>{snapshot.activity?.[0]?.message || "Карта готова"}</p>{update?.status === "available" ? <button onClick={() => canvasApi.applyUpdate()}>Update v{update.availableVersion}</button> : null}</div>
+      {message ? <div className={`toast ${message.error ? "is-error" : ""}`}>{message.text}</div> : null}
+      {rename ? <div className="modal-backdrop" onMouseDown={() => setRename(null)}><form className="rename-modal" onSubmit={saveRename} onMouseDown={(event) => event.stopPropagation()}><small>РУЧНОЕ ИМЯ</small><h2>Переименовать</h2><input name="value" defaultValue={rename.value} autoFocus maxLength={240} required /><div><button type="button" onClick={() => setRename(null)}>Отмена</button><button type="submit" className="primary">Сохранить</button></div></form></div> : null}
+    </div>
+  );
+}

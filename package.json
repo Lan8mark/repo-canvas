@@ -26,6 +26,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "build": "vite build",
+    "dev": "vite --config vite.config.js",
     "start": "node server.mjs",
     "repo-canvas": "node repo-canvas/scripts/canvas.mjs",
     "repo-canvas:start": "node repo-canvas/scripts/canvas.mjs start",
@@ -48,5 +50,13 @@
   ],
   "dependencies": {
     "@openai/codex-sdk": "0.147.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.5",
+    "@xyflow/react": "^12.11.3",
+    "elkjs": "^0.11.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^8.2.1"
   }
 }
