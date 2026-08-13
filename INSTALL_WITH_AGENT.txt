@@ -16,27 +16,23 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
    Если владелец дал ссылку на GitHub:
 
-   npm install --save-dev --save-exact --ignore-scripts github:Lan8mark/repo-canvas#v0.9.0
+   npx --yes --package=github:Lan8mark/repo-canvas#v0.10.0 repo-canvas bootstrap
 
-   Если в корне проекта лежит `repo-canvas-0.9.0.tgz`:
+   Если в корне проекта лежит `repo-canvas-0.10.0.tgz`:
 
-   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.9.0.tgz
+   npx --yes --package=./repo-canvas-0.10.0.tgz repo-canvas bootstrap
 
-   Затем выполни:
+   `bootstrap` установит весь постоянный runtime и зависимости внутрь `.repo-canvas/`, проверит локальное подключение Codex, запустит read-only Architect на `gpt-5.6-sol` с reasoning medium, построит смысловую карту и включит Observer на `gpt-5.4-mini`. Observer будет следить за публичными локальными журналами Codex, Claude Code и Kimi Code, относящимися к этому репозиторию.
 
-   npx --no-install repo-canvas setup
-
-   `setup` проверит локальное подключение Codex, запустит read-only Architect на `gpt-5.6-sol` с reasoning medium, построит смысловую карту и включит Observer на `gpt-5.4-mini`. Observer будет следить за публичными локальными журналами Codex, Claude Code и Kimi Code, относящимися к этому репозиторию.
-
-   Установщик добавляет пакетные scripts, ignored-каталог `.repo-canvas/` и необходимые строки `.gitignore`. Если `package.json` отсутствовал, npm создаст минимальный служебный manifest. Не запускай `npm init` и не придумывай метаданные проекта. При конфликте остановись, ничего не перетирая.
+   Единственный постоянный след в проекте — самоигнорируемая папка `.repo-canvas/`. Не меняй `package.json`, lock-файлы, корневой `.gitignore`, `node_modules`, инструкции или hooks проекта. После установки проверь `git status`: он должен совпадать с состоянием до установки. При конфликте остановись, ничего не перетирая.
 
 4. Запусти один foreground-сервер в устойчивом терминале:
 
-   npm run repo-canvas:start
+   node .repo-canvas/repo-canvas.mjs start
 
    Если сервер Repo Canvas для этого проекта уже работает, используй его. Не завершай посторонние процессы. Если порт 4173 занят, выбери свободный:
 
-   npm run repo-canvas -- start --port <port>
+   node .repo-canvas/repo-canvas.mjs start --port <port>
 
 5. Дождись строки `Repo Canvas listening at ...`: сервер сам откроет защищённую карту в браузере. Проверь фактическое отображение; остальные вкладки на этом локальном адресе подключатся автоматически. Если браузер не открылся, открой точную напечатанную ссылку вместе с `#token=...`:
    - в слое `Смысл` каждая сущность объясняет проблему и решение простым языком;
@@ -50,8 +46,8 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
 6. Выполни:
 
-   npm run repo-canvas -- check
-   npm run repo-canvas -- observer status
+   node .repo-canvas/repo-canvas.mjs check
+   node .repo-canvas/repo-canvas.mjs observer status
 
 7. Верни владельцу:
    - локальную ссылку;
@@ -65,12 +61,12 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
 После крупной перестройки проекта или по запросу владельца обнови смысловую карту:
 
-   npm run repo-canvas -- architect --refresh
+   node .repo-canvas/repo-canvas.mjs architect --refresh
 
 Остановить наблюдение:
 
-   npm run repo-canvas -- observer disable
+   node .repo-canvas/repo-canvas.mjs observer disable
 
 Включить его снова:
 
-   npm run repo-canvas -- observer enable
+   node .repo-canvas/repo-canvas.mjs observer enable

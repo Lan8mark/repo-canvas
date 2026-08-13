@@ -4,56 +4,36 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { ensureStore, getSnapshot } from "./canvas-store.mjs";
-import { packageRoot, projectRoot } from "./project-root.mjs";
+import { packageRoot, projectRoot, resolveDataDirectory } from "./project-root.mjs";
 
-const desiredScripts = {
-  "repo-canvas": "repo-canvas",
-  "repo-canvas:start": "repo-canvas start",
-  "repo-canvas:check": "repo-canvas check",
-};
-const sourceScripts = {
-  "repo-canvas": "node repo-canvas/scripts/canvas.mjs",
-  "repo-canvas:start": "node repo-canvas/scripts/canvas.mjs start",
-  "repo-canvas:check": "node repo-canvas/scripts/canvas.mjs check",
-};
+const SELF_IGNORE = `# Repo Canvas owns this disposable directory.\n*\n`;
 
 function readText(file) {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
 }
 
 function readJson(file, label) {
-  let parsed;
   try {
-    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("expected an object");
+    return value;
   } catch (error) {
     throw new Error(`${label} is missing or invalid: ${file} (${error.message})`);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${label} must contain a JSON object: ${file}`);
-  }
-  return parsed;
 }
 
-function ensureIgnoreLines(content) {
-  const current = content || "";
-  const lines = current.split(/\r?\n/).map((line) => line.trim());
-  const missing = [".repo-canvas/", "/repo-canvas-*.tgz"].filter((line) => !lines.includes(line));
-  if (!missing.length) return current;
-  return `${current.trimEnd()}${current.trim() ? "\n" : ""}${missing.join("\n")}\n`;
-}
-
-function atomicWrite(file, content) {
+function atomicWrite(file, content, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomUUID()}.tmp`);
-  fs.writeFileSync(temporary, content, "utf8");
+  fs.writeFileSync(temporary, content, { encoding: "utf8", mode });
   fs.renameSync(temporary, file);
+  if (process.platform !== "win32") fs.chmodSync(file, mode);
 }
 
-function installedPackageVersion(packageName) {
-  const parts = packageName.split("/");
-  const manifest = path.join(projectRoot, "node_modules", ...parts, "package.json");
-  if (!fs.existsSync(manifest)) return null;
-  return readJson(manifest, "Installed Repo Canvas package").version || null;
+function writeIfChanged(file, content, changed, mode = 0o600) {
+  if (readText(file) === content) return;
+  atomicWrite(file, content, mode);
+  changed.push(path.relative(projectRoot, file));
 }
 
 function npmInvocation() {
@@ -63,87 +43,124 @@ function npmInvocation() {
   ].filter(Boolean);
   const npmCli = candidates.find((candidate) => fs.existsSync(candidate));
   if (npmCli) return { command: process.execPath, prefix: [npmCli] };
-  if (process.platform === "win32") {
-    throw new Error("npm CLI could not be located next to Node.js; run npm install manually, then rerun init");
-  }
+  if (process.platform === "win32") throw new Error("npm CLI could not be located next to Node.js");
   return { command: "npm", prefix: [] };
 }
 
-function installPinnedPackage(packageInfo, installSpec) {
-  const npm = npmInvocation();
-  const spec = installSpec || `${packageInfo.name}@${packageInfo.version}`;
-  const result = spawnSync(
-    npm.command,
-    [...npm.prefix, "install", "--save-dev", "--save-exact", "--ignore-scripts", spec],
-    { cwd: projectRoot, stdio: "inherit", shell: false },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`npm install failed with exit code ${result.status}`);
-}
-
-function packageDependencySpec(projectPackage, packageName) {
-  return projectPackage.devDependencies?.[packageName] || projectPackage.dependencies?.[packageName] || null;
-}
-
-export function runInit({ upgrade = false, installSpec = null } = {}) {
-  const packageManifest = path.join(packageRoot, "package.json");
-  const projectManifest = path.join(projectRoot, "package.json");
-  const packageInfo = readJson(packageManifest, "Repo Canvas package manifest");
-  let projectPackage = readJson(projectManifest, "Project package.json");
-  const conflicts = [];
-
-  for (const [key, value] of Object.entries(desiredScripts)) {
-    const current = projectPackage.scripts?.[key];
-    const sourceCheckout = packageRoot === projectRoot && current === sourceScripts[key];
-    if (current && current !== value && !sourceCheckout) {
-      conflicts.push(`package.json script '${key}' is already '${projectPackage.scripts[key]}'`);
-    }
-  }
-
-  const dependencySpec = packageDependencySpec(projectPackage, packageInfo.name);
-  const installedVersion = installedPackageVersion(packageInfo.name);
-  if (dependencySpec && installedVersion && installedVersion !== packageInfo.version && !upgrade) {
-    conflicts.push(
-      `${packageInfo.name} ${installedVersion} is installed; rerun ${packageInfo.version} with init --upgrade`,
-    );
-  }
-
-  if (conflicts.length) {
-    throw new Error(`Initialization conflicts:\n- ${conflicts.join("\n- ")}`);
-  }
-
-  console.log(`Repo Canvas root: ${projectRoot}`);
-  const runningFromProject = packageRoot === projectRoot;
-  const needsInstall = !runningFromProject && (!dependencySpec || installedVersion !== packageInfo.version || upgrade);
-  if (needsInstall) installPinnedPackage(packageInfo, installSpec);
-
-  projectPackage = readJson(projectManifest, "Project package.json");
-  projectPackage.scripts = {
-    ...(projectPackage.scripts || {}),
-    ...(packageRoot === projectRoot ? sourceScripts : desiredScripts),
+function portablePaths() {
+  const dataDirectory = resolveDataDirectory(projectRoot);
+  const runtimeDirectory = path.join(dataDirectory, "runtime");
+  return {
+    dataDirectory,
+    runtimeDirectory,
+    installedPackage: path.join(runtimeDirectory, "node_modules", "repo-canvas"),
+    installedCli: path.join(runtimeDirectory, "node_modules", "repo-canvas", "repo-canvas", "scripts", "canvas.mjs"),
   };
+}
 
-  const writes = new Map();
-  writes.set(projectManifest, `${JSON.stringify(projectPackage, null, 2)}\n`);
+function launcherSource(dataDirectory) {
+  const cli = path.join(packageRoot, "repo-canvas", "scripts", "canvas.mjs");
+  const relativeCli = path.relative(dataDirectory, cli);
+  if (!relativeCli || path.isAbsolute(relativeCli)) throw new Error("Repo Canvas launcher cannot address its runtime portably");
+  return `import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 
-  const gitignoreFile = path.join(projectRoot, ".gitignore");
-  writes.set(gitignoreFile, ensureIgnoreLines(readText(gitignoreFile)));
+const home = path.dirname(fileURLToPath(import.meta.url));
+const fallback = path.resolve(home, ${JSON.stringify(relativeCli)});
+const pointerFile = path.join(home, "runtime", "current.json");
+let cli = fallback;
+try {
+  const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+  const candidate = path.resolve(String(pointer.cli || ""));
+  const versions = path.resolve(home, "runtime", "versions");
+  const relative = path.relative(versions, candidate);
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative) && fs.existsSync(candidate)) cli = candidate;
+} catch {}
 
+process.env.REPO_CANVAS_RUNTIME_ACTIVE = "1";
+await import(pathToFileURL(cli).href);
+`;
+}
+
+function ensurePortableFiles() {
+  const { dataDirectory } = portablePaths();
   const changed = [];
-  for (const [file, content] of writes) {
-    if (readText(file) === content) continue;
-    atomicWrite(file, content);
-    changed.push(path.relative(projectRoot, file) || path.basename(file));
-  }
+  writeIfChanged(path.join(dataDirectory, ".gitignore"), SELF_IGNORE, changed);
+  writeIfChanged(path.join(dataDirectory, "repo-canvas.mjs"), launcherSource(dataDirectory), changed);
+  writeIfChanged(
+    path.join(dataDirectory, "repo-canvas.cmd"),
+    `@echo off\r\nnode "%~dp0repo-canvas.mjs" %*\r\n`,
+    changed,
+  );
+  writeIfChanged(
+    path.join(dataDirectory, "repo-canvas"),
+    `#!/bin/sh\nexec node "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/repo-canvas.mjs" "$@"\n`,
+    changed,
+    0o700,
+  );
+  return changed;
+}
 
+export function runInit() {
+  const packageInfo = readJson(path.join(packageRoot, "package.json"), "Repo Canvas package manifest");
+  console.log(`Repo Canvas root: ${projectRoot}`);
+  const changed = ensurePortableFiles();
   ensureStore();
   const snapshot = getSnapshot();
   if (snapshot.storeErrors.length) {
     throw new Error(`Store validation failed after init: ${JSON.stringify(snapshot.storeErrors)}`);
   }
+  console.log(changed.length ? `Created: ${changed.join(", ")}` : "Repo Canvas portable directory is already initialized.");
+  console.log(process.platform === "win32"
+    ? "Run: .repo-canvas\\repo-canvas.cmd setup"
+    : "Run: ./.repo-canvas/repo-canvas setup");
+  return { root: projectRoot, directory: resolveDataDirectory(projectRoot), changed, version: packageInfo.version };
+}
 
-  console.log(changed.length ? `Updated: ${changed.join(", ")}` : "Repo Canvas is already initialized; no file changes.");
-  console.log("Next: npm run repo-canvas -- setup");
-  console.log("Setup builds the semantic map and enables repository-scoped observation.");
-  return { root: projectRoot, changed, version: packageInfo.version };
+function installPortableRuntime() {
+  const packageInfo = readJson(path.join(packageRoot, "package.json"), "Repo Canvas package manifest");
+  const paths = portablePaths();
+  fs.mkdirSync(paths.dataDirectory, { recursive: true });
+  if (readText(path.join(paths.dataDirectory, ".gitignore")) !== SELF_IGNORE) {
+    atomicWrite(path.join(paths.dataDirectory, ".gitignore"), SELF_IGNORE);
+  }
+  const npm = npmInvocation();
+  const result = spawnSync(
+    npm.command,
+    [
+      ...npm.prefix,
+      "install", "--prefix", paths.runtimeDirectory,
+      "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", "--package-lock=false", "--install-links",
+      packageRoot,
+    ],
+    { cwd: projectRoot, stdio: "inherit", shell: false },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Portable npm install failed with exit code ${result.status}`);
+  const installed = readJson(path.join(paths.installedPackage, "package.json"), "Portable Repo Canvas package");
+  if (installed.version !== packageInfo.version || !fs.existsSync(paths.installedCli)) {
+    throw new Error("Portable Repo Canvas runtime failed validation");
+  }
+  return { ...paths, version: installed.version };
+}
+
+export function runBootstrap({ noSetup = false, refresh = false } = {}) {
+  console.log(`Installing Repo Canvas inside ${path.join(projectRoot, ".repo-canvas")} ...`);
+  const installed = installPortableRuntime();
+  const childArgs = [installed.installedCli, noSetup ? "init" : "setup", "--root", projectRoot];
+  if (refresh) childArgs.push("--refresh");
+  const result = spawnSync(process.execPath, childArgs, {
+    cwd: projectRoot,
+    env: { ...process.env, REPO_CANVAS_RUNTIME_ACTIVE: "1" },
+    stdio: "inherit",
+    shell: false,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Repo Canvas ${noSetup ? "init" : "setup"} failed with exit code ${result.status}`);
+  console.log(`Repo Canvas ${installed.version} is fully contained in ${installed.dataDirectory}`);
+  console.log(process.platform === "win32"
+    ? "Start: .repo-canvas\\repo-canvas.cmd start"
+    : "Start: ./.repo-canvas/repo-canvas start");
+  return installed;
 }

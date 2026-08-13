@@ -16,9 +16,8 @@ Install this project-visualization tool in the current repository, build the ini
 The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts github:Lan8mark/repo-canvas#v0.9.0
-npx --no-install repo-canvas setup
-npm run repo-canvas:start
+npx --yes --package=github:Lan8mark/repo-canvas#v0.10.0 repo-canvas bootstrap
+node .repo-canvas/repo-canvas.mjs start
 ```
 
 The server opens the protected loopback URL in your default browser. Keep that foreground terminal running while you use the Canvas.
@@ -66,7 +65,9 @@ Observer reads public user messages, agent messages and tool-call metadata. Clau
 - a locally authenticated Codex installation for Architect and Observer model calls;
 - Windows or macOS.
 
-The npm installation adds Repo Canvas as an exact development dependency. `setup` adds three package scripts, the ignored `.repo-canvas/` runtime directory and two `.gitignore` entries. It does not add coding-agent instructions or hooks.
+The only persistent path created in the project is `.repo-canvas/`. It contains the tool runtime and dependencies, launchers, semantic map, event history, layouts, observer state and update data. Its own nested `.gitignore` hides the entire directory without touching the repository's root `.gitignore`.
+
+Repo Canvas does not create or edit the project's `package.json`, lockfile, `node_modules`, agent instructions or hooks. `npx` uses npm's ordinary user cache outside the project only for the temporary bootstrap. Stop the server and delete `.repo-canvas/` to remove Repo Canvas completely.
 
 The server binds to loopback only, opens a fresh tokenized Canvas URL on every start and shares that authorization with other tabs on the same local address. Existing tabs reconnect when a restarted server opens its new protected URL. Use `repo-canvas start --no-open` only when automatic browser opening is unwanted. The token protects all Canvas API reads and actions from unrelated local processes. Semantic events and Observer cursors stay in the repository's ignored `.repo-canvas/` directory. Model calls use existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters only parse their local journals; they do not copy credentials or call those providers. No API key is copied into the project.
 
@@ -74,26 +75,27 @@ From v0.8.6 onward, Canvas checks the public GitHub release feed in the backgrou
 
 ## Offline installation
 
-Download `repo-canvas-0.9.0-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.9.0.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+Download `repo-canvas-0.10.0-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.10.0.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
 
 Manual commands:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.9.0.tgz
-npx --no-install repo-canvas setup
-npm run repo-canvas:start
+npx --yes --package=./repo-canvas-0.10.0.tgz repo-canvas bootstrap
+node .repo-canvas/repo-canvas.mjs start
 ```
+
+After a successful offline bootstrap, the copied `.tgz` and instruction file may be deleted.
 
 ## Useful commands
 
 ```text
-npm run repo-canvas -- doctor
-npm run repo-canvas -- architect --refresh
-npm run repo-canvas -- observer status
-npm run repo-canvas -- observer disable
-npm run repo-canvas -- observer enable
-npm run repo-canvas -- snapshot
-npm run repo-canvas -- check
+node .repo-canvas/repo-canvas.mjs doctor
+node .repo-canvas/repo-canvas.mjs architect --refresh
+node .repo-canvas/repo-canvas.mjs observer status
+node .repo-canvas/repo-canvas.mjs observer disable
+node .repo-canvas/repo-canvas.mjs observer enable
+node .repo-canvas/repo-canvas.mjs snapshot
+node .repo-canvas/repo-canvas.mjs check
 ```
 
 Model profiles can be overridden without code changes:

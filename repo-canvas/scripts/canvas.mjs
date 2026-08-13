@@ -80,7 +80,8 @@ function printHelp() {
   console.log(`Repo Canvas CLI
 
 Commands:
-  init        Initialize local runtime scripts and ignored state
+  bootstrap   Install everything inside .repo-canvas and build the first map
+  init        Initialize the disposable .repo-canvas directory
   start       Run the foreground loopback canvas server
   area        Upsert a large semantic project area
   entity      Upsert a persistent module or responsibility
@@ -101,6 +102,7 @@ Global options:
   --no-open      Do not open the Canvas in the default browser
 
 Examples:
+  repo-canvas bootstrap
   repo-canvas init
   repo-canvas start
   repo-canvas area --id knowledge --title "Проверенные знания" --problem "Выводы теряются между сессиями" --solution "Система хранит только подтверждённые выводы" --order 1
@@ -128,6 +130,9 @@ if (args.root === true) {
       // The active project-local runtime handled the command.
     } else if (command === "help" || command === "--help" || command === "-h") {
       printHelp();
+    } else if (command === "bootstrap") {
+      const { runBootstrap } = await import("./canvas-init.mjs");
+      runBootstrap({ noSetup: Boolean(args["no-setup"]), refresh: Boolean(args.refresh) });
     } else if (command === "start" || command === "serve") {
       if (args.port !== undefined) process.env.CANVAS_PORT = String(args.port);
       if (args.host !== undefined) process.env.CANVAS_HOST = String(args.host);
@@ -135,10 +140,7 @@ if (args.root === true) {
       await import("../../server.mjs");
     } else if (command === "init") {
       const { runInit } = await import("./canvas-init.mjs");
-      runInit({
-        upgrade: Boolean(args.upgrade),
-        installSpec: args["install-spec"] && args["install-spec"] !== true ? String(args["install-spec"]) : null,
-      });
+      runInit();
     } else if (command === "doctor") {
       const { probeCodex } = await import("./model-runtime.mjs");
       const result = await probeCodex({ cwd: process.env.REPO_CANVAS_ROOT || process.cwd() });
@@ -158,10 +160,7 @@ if (args.root === true) {
       const { runArchitect } = await import("./architect.mjs");
       const { getSnapshot } = await import("./canvas-store.mjs");
       const { writeRuntimeConfig } = await import("./runtime-config.mjs");
-      runInit({
-        upgrade: Boolean(args.upgrade),
-        installSpec: args["install-spec"] && args["install-spec"] !== true ? String(args["install-spec"]) : null,
-      });
+      runInit();
       const probe = await probeCodex({ cwd: process.env.REPO_CANVAS_ROOT || process.cwd() });
       if (probe.status !== "connected") throw new Error(`Codex subscription is not available: ${probe.error || "probe failed"}`);
       let architect = null;
