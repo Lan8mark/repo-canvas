@@ -52,13 +52,21 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .inspector.inspector section>button:hover{background:#edcbb6}
 .focus-toolbar.focus-toolbar{background:#e8e0d8;border-color:#b8aa9f}
 .focus-toolbar.bridge-toolbar b{padding:0 9px;font:600 8px "JetBrains Mono";color:#6b574b}
-.edge-label.edge-label{background:#e8dfd6;border-color:#b5a396;border-radius:6px;padding:4px 7px}
+.edge-label.edge-label{background:#e8dfd6;border-color:#b5a396;border-radius:6px;padding:5px 9px;font:500 8px "JetBrains Mono"}
 .react-flow .react-flow__edge-semantic .react-flow__edge-path{stroke-linejoin:miter;shape-rendering:geometricPrecision}
 .entity-node.has-area-context{border-top-color:var(--area-color)}
 .entity-meta{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
-.area-context{display:flex;align-items:center;gap:5px;min-width:0;max-width:108px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--area-color) 24%,transparent);border-radius:999px;background:color-mix(in srgb,var(--area-color) 8%,#fff);font:600 6px "JetBrains Mono";letter-spacing:.02em;color:#756d67}
+.area-context{display:flex;align-items:center;gap:5px;min-width:0;max-width:132px;padding:4px 7px;border:1px solid color-mix(in srgb,var(--area-color) 24%,transparent);border-radius:999px;background:color-mix(in srgb,var(--area-color) 8%,#fff);font:600 7px "JetBrains Mono";letter-spacing:.02em;color:#756d67}
 .area-context i{width:5px;height:5px;flex:0 0 auto;border-radius:50%;background:var(--area-color)}
 .area-context{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.area-node.area-node>header small{font-size:8px}
+.area-node.area-node>header strong{font-size:16px}
+.area-node.area-node>header p{font-size:10px;line-height:1.4}
+.entity-status.entity-status{font-size:8px}
+.live-badge.live-badge{font-size:7px}
+.entity-node.entity-node>strong{font-size:14px;margin-top:13px}
+.entity-node.entity-node>p{font-size:10px;line-height:1.45}
+.entity-node.entity-node>small{font-size:7px}
 .react-flow__controls.react-flow__controls,.react-flow__minimap.react-flow__minimap{border-color:#a99a8e!important;background:#cec5bc!important}
 .react-flow__controls .react-flow__controls-button{background:#e5ddd5!important;border-bottom-color:#b9aa9e!important}
 .rename-modal.rename-modal{background:#e9e1d9;border-color:#b6a89c}
