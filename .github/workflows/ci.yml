@@ -22,6 +22,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: node -e "require('node:fs').mkdirSync('dist', { recursive: true })"
+      - run: 'node -e "require(''node:fs'').mkdirSync(''dist'', { recursive: true })"'
       - run: npm pack --pack-destination dist
       - run: npm run test:package -- dist/repo-canvas-0.5.0.tgz
