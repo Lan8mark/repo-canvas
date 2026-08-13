@@ -16,7 +16,7 @@ Install this project-visualization tool in the current repository, build the ini
 The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npx --yes --package=github:Lan8mark/repo-canvas#v0.10.0 repo-canvas bootstrap
+npx --yes --package=github:Lan8mark/repo-canvas#v0.10.1 repo-canvas bootstrap
 node .repo-canvas/repo-canvas.mjs start
 ```
 
@@ -75,12 +75,12 @@ From v0.8.6 onward, Canvas checks the public GitHub release feed in the backgrou
 
 ## Offline installation
 
-Download `repo-canvas-0.10.0-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.10.0.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+Download `repo-canvas-0.10.1-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.10.1.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
 
 Manual commands:
 
 ```text
-npx --yes --package=./repo-canvas-0.10.0.tgz repo-canvas bootstrap
+npx --yes --package=./repo-canvas-0.10.1.tgz repo-canvas bootstrap
 node .repo-canvas/repo-canvas.mjs start
 ```
 

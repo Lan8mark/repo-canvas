@@ -16,11 +16,11 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
    Если владелец дал ссылку на GitHub:
 
-   npx --yes --package=github:Lan8mark/repo-canvas#v0.10.0 repo-canvas bootstrap
+   npx --yes --package=github:Lan8mark/repo-canvas#v0.10.1 repo-canvas bootstrap
 
-   Если в корне проекта лежит `repo-canvas-0.10.0.tgz`:
+   Если в корне проекта лежит `repo-canvas-0.10.1.tgz`:
 
-   npx --yes --package=./repo-canvas-0.10.0.tgz repo-canvas bootstrap
+   npx --yes --package=./repo-canvas-0.10.1.tgz repo-canvas bootstrap
 
    `bootstrap` установит весь постоянный runtime и зависимости внутрь `.repo-canvas/`, проверит локальное подключение Codex, запустит read-only Architect на `gpt-5.6-sol` с reasoning medium, построит смысловую карту и включит Observer на `gpt-5.4-mini`. Observer будет следить за публичными локальными журналами Codex, Claude Code и Kimi Code, относящимися к этому репозиторию.
 
