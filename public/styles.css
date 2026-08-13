@@ -26,3 +26,5 @@ button{font:inherit;color:inherit}.topbar,.left-rail,.canvas-shell{background:rg
 .project-area>header{pointer-events:auto;cursor:grab;touch-action:none;user-select:none}
 .project-area>header:active,.project-entity:active{cursor:grabbing}
 .project-area.is-layout-dragging,.project-entity.is-layout-dragging{transition:none;will-change:transform;z-index:8;cursor:grabbing}
+.work-satellite.provisional{border-style:dashed;border-color:rgba(255,174,84,.72);background:rgba(255,251,244,.9);box-shadow:0 14px 32px rgba(240,151,63,.14),0 0 0 7px rgba(255,192,116,.08)}
+.work-link.is-muted{opacity:.06;animation:none}.work-satellite.is-muted{opacity:.1;pointer-events:none}.work-satellite.is-muted>i,.project-entity.is-muted.has-active-work::after{animation:none}

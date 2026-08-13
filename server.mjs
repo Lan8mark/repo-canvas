@@ -3,12 +3,16 @@ import http from "node:http";
 import path from "node:path";
 
 import { appendEvents, createEvent, getSnapshot, packageRoot, projectRoot } from "./repo-canvas/scripts/canvas-store.mjs";
+import { startObserver } from "./repo-canvas/scripts/observer.mjs";
+import { readRuntimeConfig } from "./repo-canvas/scripts/runtime-config.mjs";
 import { openSessionLocator } from "./repo-canvas/scripts/session-locator.mjs";
 
 const host = process.env.CANVAS_HOST || "127.0.0.1";
 const port = Number(process.env.CANVAS_PORT || 4173);
 const publicDirectory = path.join(packageRoot, "public");
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+const runtimeConfig = readRuntimeConfig();
+let observerService = null;
 
 if (!loopbackHosts.has(host)) throw new Error(`Repo Canvas v1 only binds to loopback; received CANVAS_HOST=${host}`);
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`Invalid CANVAS_PORT: ${process.env.CANVAS_PORT}`);
@@ -189,7 +193,10 @@ const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", `http://${host}:${port}`);
 
     if (request.method === "GET" && url.pathname === "/api/health") {
-      sendJson(response, 200, { ok: true, pid: process.pid, root: projectRoot, now: new Date().toISOString() });
+      sendJson(response, 200, {
+        ok: true, pid: process.pid, root: projectRoot, now: new Date().toISOString(),
+        observer: observerService?.observer.summary() || { enabled: runtimeConfig.enabled, running: false },
+      });
       return;
     }
 
@@ -261,6 +268,10 @@ server.once("error", (error) => {
 server.listen(port, host, () => {
   console.log(`Repo Canvas root: ${projectRoot}`);
   console.log(`Repo Canvas listening at http://${host}:${port}`);
+  if (runtimeConfig.enabled && getSnapshot().semantic) {
+    observerService = startObserver({ config: runtimeConfig });
+    console.log(`Repo Canvas observer: codex sessions for ${runtimeConfig.repoRoot}`);
+  }
 });
 
 let stopping = false;
@@ -273,6 +284,7 @@ function shutdown(signal) {
     process.exit(0);
   }, 1_500);
   deadline.unref();
+  observerService?.stop().catch((error) => console.error(`Observer shutdown error: ${error.message}`));
   server.close(() => {
     clearTimeout(deadline);
     process.exit(0);

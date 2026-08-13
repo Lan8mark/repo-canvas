@@ -85,7 +85,22 @@ try {
   fs.mkdirSync(path.join(root, "src"));
   fs.writeFileSync(path.join(root, "pyproject.toml"), "[project]\nname = \"existing-python-project\"\nversion = \"1.0.0\"\n");
   fs.writeFileSync(path.join(root, "src", "app.py"), "print('existing product code')\n");
-  fs.writeFileSync(path.join(root, "AGENTS.md"), "# Owner instructions\n\nKeep this paragraph.\n");
+  fs.writeFileSync(path.join(root, "AGENTS.md"), `# Owner instructions
+
+Keep this paragraph.
+
+<!-- repo-canvas:start -->
+## Repo Canvas
+Old agent-facing contract that must be migrated away.
+<!-- repo-canvas:end -->
+`);
+  fs.mkdirSync(path.join(root, ".codex"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".codex", "hooks.json"), `${JSON.stringify({
+    hooks: {
+      UserPromptSubmit: [{ hooks: [{ type: "command", command: "npm run --silent repo-canvas -- hook", timeout: 10 }] }],
+      SessionStart: [{ hooks: [{ type: "command", command: "owner-command", timeout: 10 }] }],
+    },
+  }, null, 2)}\n`);
   assert.ok(!fs.existsSync(path.join(root, "package.json")), "Fixture must begin without an npm manifest");
 
   fs.mkdirSync(path.join(conflictRoot, ".git"));
@@ -107,17 +122,16 @@ try {
   assert.ok(fs.existsSync(installedCli), "CLI source missing from packed artifact");
   assert.ok(fs.existsSync(path.join(root, "node_modules", ".bin", process.platform === "win32" ? "repo-canvas.cmd" : "repo-canvas")));
   run(process.execPath, [installedCli, "init"], root);
-  const managedFiles = ["package.json", "package-lock.json", "AGENTS.md", "CLAUDE.md", ".gitignore", "repo-canvas/SKILL.md", ".codex/hooks.json"];
+  const managedFiles = ["package.json", "package-lock.json", "AGENTS.md", ".gitignore", "repo-canvas/SKILL.md", ".codex/hooks.json"];
   const firstHash = hashFiles(root, managedFiles);
   run(process.execPath, [installedCli, "init"], root);
   assert.equal(hashFiles(root, managedFiles), firstHash, "Second init changed managed files");
   assert.match(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /Keep this paragraph/);
-  assert.match(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /snapshot\.semantic/);
-  assert.match(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /verified: true/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /Repo Canvas/);
   const hooks = JSON.parse(fs.readFileSync(path.join(root, ".codex", "hooks.json"), "utf8"));
-  assert.match(hooks.hooks.PreToolUse[0].matcher, /apply_patch/);
-  assert.match(hooks.hooks.UserPromptSubmit[0].hooks[0].command, /repo-canvas -- hook/);
-  assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "@AGENTS.md\n");
+  assert.equal(hooks.hooks.SessionStart[0].hooks[0].command, "owner-command");
+  assert.equal(hooks.hooks.UserPromptSubmit, undefined);
+  assert.ok(!fs.existsSync(path.join(root, "CLAUDE.md")), "init must not add agent context files");
   assert.match(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), /\/repo-canvas-\*\.tgz/);
   const initializedPackage = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   assert.equal(initializedPackage.scripts["repo-canvas"], "repo-canvas");

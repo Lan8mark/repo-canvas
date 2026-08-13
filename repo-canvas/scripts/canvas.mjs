@@ -92,6 +92,10 @@ Commands:
   snapshot    Print the reduced canvas state
   check       Validate the event log and print a summary
   repair      Preview corrupt-line recovery; add --apply to repair
+  setup       Initialize, verify Codex, build the first semantic map and enable observation
+  doctor      Verify subscription-backed Codex access
+  architect   Build the first map; add --refresh to reconcile an existing map
+  observer    Manage repository-scoped session observation: enable, disable, once, start, status
 
 Global options:
   --root <path>  Explicit repository root
@@ -105,6 +109,9 @@ Examples:
   repo-canvas relation --from search --to registry --label "reads"
   repo-canvas work --id improve-search --title "Improve matching" --targets search --status active --actor codex
   repo-canvas work start --id improve-search --title "Improve matching" --targets search --note "Tighten matching"
+  repo-canvas setup
+  repo-canvas architect --refresh
+  repo-canvas observer status
 `);
 }
 
@@ -128,6 +135,64 @@ if (args.root === true) {
         upgrade: Boolean(args.upgrade),
         installSpec: args["install-spec"] && args["install-spec"] !== true ? String(args["install-spec"]) : null,
       });
+    } else if (command === "doctor") {
+      const { probeCodex } = await import("./model-runtime.mjs");
+      const result = await probeCodex({ cwd: process.env.REPO_CANVAS_ROOT || process.cwd() });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status !== "connected") process.exitCode = 1;
+    } else if (command === "architect") {
+      const { runArchitect } = await import("./architect.mjs");
+      const result = await runArchitect({
+        refresh: Boolean(args.refresh),
+        model: args.model && args.model !== true ? String(args.model) : undefined,
+        effort: args.effort && args.effort !== true ? String(args.effort) : undefined,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } else if (command === "setup") {
+      const { runInit } = await import("./canvas-init.mjs");
+      const { probeCodex } = await import("./model-runtime.mjs");
+      const { runArchitect } = await import("./architect.mjs");
+      const { getSnapshot } = await import("./canvas-store.mjs");
+      const { writeRuntimeConfig } = await import("./runtime-config.mjs");
+      runInit({
+        upgrade: Boolean(args.upgrade),
+        installSpec: args["install-spec"] && args["install-spec"] !== true ? String(args["install-spec"]) : null,
+      });
+      const probe = await probeCodex({ cwd: process.env.REPO_CANVAS_ROOT || process.cwd() });
+      if (probe.status !== "connected") throw new Error(`Codex subscription is not available: ${probe.error || "probe failed"}`);
+      let architect = null;
+      if (!getSnapshot().semantic || args.refresh) {
+        architect = await runArchitect({
+          refresh: Boolean(args.refresh),
+          model: args.model && args.model !== true ? String(args.model) : undefined,
+          effort: args.effort && args.effort !== true ? String(args.effort) : undefined,
+        });
+      }
+      const observer = writeRuntimeConfig({ enabled: true, provider: "codex" });
+      console.log(JSON.stringify({ ok: true, probe, architect, observer }, null, 2));
+    } else if (command === "observer") {
+      const action = args._[0] || "status";
+      const { readRuntimeConfig, writeRuntimeConfig } = await import("./runtime-config.mjs");
+      if (action === "enable") {
+        console.log(JSON.stringify(writeRuntimeConfig({ enabled: true, provider: "codex" }), null, 2));
+      } else if (action === "disable") {
+        console.log(JSON.stringify(writeRuntimeConfig({ enabled: false }), null, 2));
+      } else if (action === "status") {
+        console.log(JSON.stringify(readRuntimeConfig(), null, 2));
+      } else if (action === "once") {
+        const { runObserverOnce } = await import("./observer.mjs");
+        console.log(JSON.stringify(await runObserverOnce({ replay: Boolean(args.replay) }), null, 2));
+      } else if (action === "start") {
+        const { startObserver } = await import("./observer.mjs");
+        const service = startObserver();
+        console.log(`Repo Canvas observer watching ${service.observer.config.repoRoot}`);
+        await new Promise((resolve) => {
+          const stop = async () => { await service.stop(); resolve(); };
+          process.once("SIGINT", stop); process.once("SIGTERM", stop);
+        });
+      } else {
+        throw new Error(`Unknown observer action: ${action}`);
+      }
     } else {
       const { appendEvent, createEvent, getSnapshot, repairStore } = await import("./canvas-store.mjs");
       const emit = (type, actor, taskId, payload) => {

@@ -9,7 +9,8 @@ export const SESSION_SURFACES = new Set([
   "codex-app", "claude-app", "kimi-app", "codex-cli", "claude-cli", "kimi-cli",
 ]);
 export const EVENT_TYPES = new Set([
-  "area.upsert", "entity.upsert", "relation.upsert", "work.upsert",
+  "area.upsert", "area.remove", "entity.upsert", "entity.remove",
+  "relation.upsert", "relation.remove", "work.upsert",
   "activity.log",
   // v0.3 compatibility: old repositories remain readable after upgrade.
   "task.upsert", "node.upsert", "edge.upsert", "directive.created", "directive.ack",
@@ -112,6 +113,9 @@ export function validateEvent(event) {
     for (const field of ["x", "y", "width", "height", "order"]) {
       if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
     }
+  } else if (event.type === "area.remove") {
+    requireString(errors, payload.id, "payload.id", { max: 128, id: true });
+    optionalString(errors, payload.reason, "payload.reason", 2000);
   } else if (event.type === "entity.upsert") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });
     requireString(errors, payload.areaId, "payload.areaId", { max: 128, id: true });
@@ -124,17 +128,23 @@ export function validateEvent(event) {
     optionalStringList(errors, payload.outputs, "payload.outputs");
     optionalStringList(errors, payload.dependsOn, "payload.dependsOn");
     for (const field of ["x", "y", "order"]) if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
+  } else if (event.type === "entity.remove") {
+    requireString(errors, payload.id, "payload.id", { max: 128, id: true });
+    optionalString(errors, payload.reason, "payload.reason", 2000);
   } else if (event.type === "relation.upsert") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });
     requireString(errors, payload.from, "payload.from", { max: 128, id: true });
     requireString(errors, payload.to, "payload.to", { max: 128, id: true });
     optionalString(errors, payload.label, "payload.label", 240);
     if (!new Set(["existing", "planned"]).has(payload.status)) errors.push(`payload.status has unsupported value '${String(payload.status)}'`);
+  } else if (event.type === "relation.remove") {
+    requireString(errors, payload.id, "payload.id", { max: 128, id: true });
+    optionalString(errors, payload.reason, "payload.reason", 2000);
   } else if (event.type === "work.upsert") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });
     requireString(errors, payload.title, "payload.title", { max: 240 });
     requireStatus(errors, payload.status, "payload.status", WORK_STATUSES);
-    requireIdList(errors, payload.targets, "payload.targets");
+    requireIdList(errors, payload.targets, "payload.targets", { allowEmpty: payload.provisional === true });
     optionalString(errors, payload.note, "payload.note", 2000);
     validateSessionLocator(errors, payload.session);
   } else if (event.type === "activity.log") {
@@ -171,15 +181,30 @@ export function validateEventSequence(eventsWithLines) {
   const legacyNodes = new Set();
   const areas = new Set();
   const entities = new Set();
+  const entityAreas = new Map();
 
   for (const { event, line } of eventsWithLines) {
     if (eventIds.has(event.id)) errors.push({ line, id: event.id, message: "duplicate event id" });
     eventIds.add(event.id);
     if (event.type === "node.upsert") legacyNodes.add(`${event.taskId}::${event.payload.id}`);
     if (event.type === "area.upsert") areas.add(event.payload.id);
+    if (event.type === "area.remove") {
+      areas.delete(event.payload.id);
+      for (const [entityId, areaId] of entityAreas) {
+        if (areaId === event.payload.id) {
+          entities.delete(entityId);
+          entityAreas.delete(entityId);
+        }
+      }
+    }
     if (event.type === "entity.upsert") {
       entities.add(event.payload.id);
+      entityAreas.set(event.payload.id, event.payload.areaId);
       if (!areas.has(event.payload.areaId)) errors.push({ line, id: event.id, message: `entity area '${event.payload.areaId}' does not exist` });
+    }
+    if (event.type === "entity.remove") {
+      entities.delete(event.payload.id);
+      entityAreas.delete(event.payload.id);
     }
     if (event.type === "relation.upsert") {
       if (!entities.has(event.payload.from)) errors.push({ line, id: event.id, message: `relation source '${event.payload.from}' does not exist` });

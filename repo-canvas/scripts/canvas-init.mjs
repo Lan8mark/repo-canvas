@@ -8,8 +8,6 @@ import { packageRoot, projectRoot } from "./project-root.mjs";
 
 const AGENTS_START = "<!-- repo-canvas:start -->";
 const AGENTS_END = "<!-- repo-canvas:end -->";
-const CLAUDE_START = "<!-- repo-canvas:claude-start -->";
-const CLAUDE_END = "<!-- repo-canvas:claude-end -->";
 const SKILL_MARKER = "<!-- repo-canvas:managed -->";
 const hookCommand = "npm run --silent repo-canvas -- hook";
 
@@ -23,30 +21,6 @@ const sourceScripts = {
   "repo-canvas:start": "node repo-canvas/scripts/canvas.mjs start",
   "repo-canvas:check": "node repo-canvas/scripts/canvas.mjs check",
 };
-
-const agentsBlock = `${AGENTS_START}
-## Repo Canvas
-
-Before changing repository files, read \`repo-canvas/SKILL.md\`.
-Run \`npm run repo-canvas -- snapshot\` before editing.
-If \`snapshot.semantic\` is false, follow "Bootstrap an existing repository" before product edits.
-After inspection but before the first product write, run one separate short command:
-\`npm run repo-canvas -- work start --id <id> --title <title> --targets <entity-ids> --note <intent> --actor <agent>\`.
-Do not combine registration with tests or other commands. Product writes are forbidden until it returns \`verified: true\`.
-If scope changes, update the same work immediately. Update only touched passports, publish structural checkpoints,
-mark the work done/stopped/blocked truthfully, and run \`npm run repo-canvas -- check\` before completion.
-${AGENTS_END}`;
-
-const codexHooks = {
-  hooks: {
-    UserPromptSubmit: [{ hooks: [{ type: "command", command: hookCommand, timeout: 10 }] }],
-    PreToolUse: [{ matcher: "apply_patch|Write|Edit", hooks: [{ type: "command", command: hookCommand, timeout: 10 }] }],
-  },
-};
-
-const claudeBlock = `${CLAUDE_START}
-@AGENTS.md
-${CLAUDE_END}`;
 
 function readText(file) {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
@@ -65,18 +39,20 @@ function readJson(file, label) {
   return parsed;
 }
 
-function mergeHooks(current, label) {
+function removeRepoCanvasHooks(current, label) {
   const parsed = current === null ? {} : JSON.parse(current);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} must contain a JSON object`);
   parsed.hooks = parsed.hooks && typeof parsed.hooks === "object" && !Array.isArray(parsed.hooks) ? parsed.hooks : {};
-  for (const [event, groups] of Object.entries(codexHooks.hooks)) {
-    const existing = Array.isArray(parsed.hooks[event]) ? parsed.hooks[event] : [];
-    for (const group of groups) {
-      const present = existing.some((candidate) => candidate?.hooks?.some((hook) => hook.command === hookCommand));
-      if (!present) existing.push(group);
-    }
-    parsed.hooks[event] = existing;
+  for (const [event, groups] of Object.entries(parsed.hooks)) {
+    if (!Array.isArray(groups)) continue;
+    const cleaned = groups.map((group) => ({
+      ...group,
+      hooks: Array.isArray(group?.hooks) ? group.hooks.filter((hook) => hook?.command !== hookCommand) : group?.hooks,
+    })).filter((group) => !Array.isArray(group.hooks) || group.hooks.length > 0);
+    if (cleaned.length) parsed.hooks[event] = cleaned;
+    else delete parsed.hooks[event];
   }
+  if (!Object.keys(parsed.hooks).length) delete parsed.hooks;
   return `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
@@ -84,7 +60,7 @@ function markerCount(content, marker) {
   return content.split(marker).length - 1;
 }
 
-function upsertBlock(content, start, end, block, label) {
+function removeBlock(content, start, end, label) {
   const current = content || "";
   const starts = markerCount(current, start);
   const ends = markerCount(current, end);
@@ -92,10 +68,9 @@ function upsertBlock(content, start, end, block, label) {
   if (starts === 1) {
     const startIndex = current.indexOf(start);
     const endIndex = current.indexOf(end, startIndex) + end.length;
-    return `${current.slice(0, startIndex)}${block}${current.slice(endIndex)}`;
+    return `${current.slice(0, startIndex)}${current.slice(endIndex)}`.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
   }
-  const separator = current.trim() ? "\n\n" : "";
-  return `${current.trimEnd()}${separator}${block}\n`;
+  return current;
 }
 
 function ensureIgnoreLines(content) {
@@ -166,10 +141,6 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
 
   const agentsFile = path.join(projectRoot, "AGENTS.md");
   const agentsCurrent = readText(agentsFile);
-  if (agentsCurrent && !agentsCurrent.includes(AGENTS_START) && /repo canvas/i.test(agentsCurrent)) {
-    conflicts.push("AGENTS.md contains unmarked Repo Canvas text");
-  }
-
   const skillSource = fs.readFileSync(path.join(packageRoot, "repo-canvas", "SKILL.md"), "utf8");
   if (!skillSource.includes(SKILL_MARKER)) throw new Error("Packaged SKILL.md is missing its managed marker");
   const skillTarget = path.join(projectRoot, "repo-canvas", "SKILL.md");
@@ -178,14 +149,10 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
     conflicts.push("repo-canvas/SKILL.md exists but is not package-managed");
   }
   const codexHooksFile = path.join(projectRoot, ".codex", "hooks.json");
-  try { mergeHooks(readText(codexHooksFile), ".codex/hooks.json"); } catch (error) { conflicts.push(error.message); }
+  try { removeRepoCanvasHooks(readText(codexHooksFile), ".codex/hooks.json"); } catch (error) { conflicts.push(error.message); }
 
   try {
-    upsertBlock(agentsCurrent, AGENTS_START, AGENTS_END, agentsBlock, "AGENTS.md");
-    const claudeCurrent = readText(path.join(projectRoot, "CLAUDE.md"));
-    if (claudeCurrent && !/^@AGENTS\.md\s*$/m.test(claudeCurrent)) {
-      upsertBlock(claudeCurrent, CLAUDE_START, CLAUDE_END, claudeBlock, "CLAUDE.md");
-    }
+    removeBlock(agentsCurrent, AGENTS_START, AGENTS_END, "AGENTS.md");
   } catch (error) {
     conflicts.push(error.message);
   }
@@ -215,16 +182,9 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
 
   const writes = new Map();
   writes.set(projectManifest, `${JSON.stringify(projectPackage, null, 2)}\n`);
-  writes.set(agentsFile, upsertBlock(agentsCurrent, AGENTS_START, AGENTS_END, agentsBlock, "AGENTS.md"));
+  if (agentsCurrent !== null) writes.set(agentsFile, removeBlock(agentsCurrent, AGENTS_START, AGENTS_END, "AGENTS.md"));
   writes.set(skillTarget, skillSource);
-  writes.set(codexHooksFile, mergeHooks(readText(codexHooksFile), ".codex/hooks.json"));
-
-  const claudeFile = path.join(projectRoot, "CLAUDE.md");
-  const claudeCurrent = readText(claudeFile);
-  if (claudeCurrent === null) writes.set(claudeFile, `@AGENTS.md\n`);
-  else if (!/^@AGENTS\.md\s*$/m.test(claudeCurrent)) {
-    writes.set(claudeFile, upsertBlock(claudeCurrent, CLAUDE_START, CLAUDE_END, claudeBlock, "CLAUDE.md"));
-  }
+  if (readText(codexHooksFile) !== null) writes.set(codexHooksFile, removeRepoCanvasHooks(readText(codexHooksFile), ".codex/hooks.json"));
 
   const gitignoreFile = path.join(projectRoot, ".gitignore");
   writes.set(gitignoreFile, ensureIgnoreLines(readText(gitignoreFile)));
@@ -243,12 +203,7 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
   }
 
   console.log(changed.length ? `Updated: ${changed.join(", ")}` : "Repo Canvas is already initialized; no file changes.");
-  console.log("Start in a persistent terminal: npm run repo-canvas:start");
-  console.log(
-    'First install: build the semantic project map using "Bootstrap an existing repository" in repo-canvas/SKILL.md.',
-  );
-  console.log(
-    "Unknown-agent bootstrap: Read AGENTS.md and repo-canvas/SKILL.md before changing files; use npm run repo-canvas -- <command> and follow every checkpoint.",
-  );
+  console.log("One-command setup: npm run repo-canvas -- setup");
+  console.log("Normal development agents stay untouched; the private observer maintains Canvas out of band.");
   return { root: projectRoot, changed, version: packageInfo.version };
 }

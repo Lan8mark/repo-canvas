@@ -12,7 +12,8 @@ if (process.argv[2] === "--clean") {
   for (const target of targets) {
     const allowed = target === playwrightArtifacts
       || (path.dirname(target) === stressParent && path.basename(target).startsWith("stress-"));
-    if (!allowed) throw new Error(`Refusing cleanup outside Repo Canvas QA paths: ${target}`);
+    const qaArtifact = path.dirname(target) === stressParent && path.basename(target).startsWith("repo-canvas-");
+    if (!allowed && !qaArtifact) throw new Error(`Refusing cleanup outside Repo Canvas QA paths: ${target}`);
     fs.rmSync(target, { recursive: true, force: true });
   }
   console.log(JSON.stringify({ removed: targets }, null, 2));

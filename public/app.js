@@ -57,6 +57,7 @@ function activeWork() {
 
 function layout() {
   const areas = snapshot.areas || [];
+  const provisionalItems = activeWork().filter((item) => item.provisional || !(item.targets || []).length);
   const entityPositions = new Map();
   const areaSpecs = areas.map((area) => {
     const entities = snapshot.entities.filter((entity) => entity.areaId === area.id);
@@ -88,7 +89,7 @@ function layout() {
   }
   const densestCorridor = Math.max(0, ...pairCounts.values());
   const adaptiveAreaGap = Math.max(AREA_GAP, 92 + densestCorridor * 38);
-  const areaPositions = packAreaRectangles(areaSpecs, { gap: adaptiveAreaGap });
+  const areaPositions = packAreaRectangles(areaSpecs, { gap: adaptiveAreaGap, margin: provisionalItems.length ? 170 : 70 });
   for (const spec of areaSpecs) {
     const areaPosition = areaPositions.get(spec.id);
     const { x, y } = areaPosition;
@@ -100,7 +101,11 @@ function layout() {
   }
   const workPositions = new Map();
   const targetCounters = new Map();
+  provisionalItems.forEach((item, index) => {
+    workPositions.set(item.id, { x: 70 + (index % 5) * 208, y: 54 + Math.floor(index / 5) * 78 });
+  });
   activeWork().forEach((item) => {
+    if (workPositions.has(item.id)) return;
     const target = item.targets?.find((id) => entityPositions.has(id));
     if (!target) return;
     const base = entityPositions.get(target);
@@ -109,8 +114,8 @@ function layout() {
     workPositions.set(item.id, { x: base.x + 24 + (count % 2) * 208, y: base.y + ENTITY_H + 18 + Math.floor(count / 2) * 78 });
   });
   worldSize = {
-    width: Math.max(1000, ...[...areaPositions.values()].map((p) => p.x + p.width + 70)),
-    height: Math.max(720, ...[...areaPositions.values()].map((p) => p.y + p.height + 80)),
+    width: Math.max(1000, ...[...areaPositions.values()].map((p) => p.x + p.width + 70), ...[...workPositions.values()].map((p) => p.x + WORK_W + 70)),
+    height: Math.max(720, ...[...areaPositions.values()].map((p) => p.y + p.height + 80), ...[...workPositions.values()].map((p) => p.y + WORK_H + 70)),
   };
   elements.world.style.width = `${worldSize.width}px`;
   elements.world.style.height = `${worldSize.height}px`;
@@ -192,10 +197,12 @@ function renderRelations(areaPositions, entityPositions, workPositions) {
   }
   for (const item of activeWork()) {
     const wp = workPositions.get(item.id); if (!wp) continue;
+    const muted = selectedArea !== "all" && (item.targets || []).length > 0
+      && !(item.targets || []).some((target) => entitiesById.get(target)?.areaId === selectedArea);
     for (const target of item.targets || []) {
       const ep = entityPositions.get(target); if (!ep) continue;
       const from = center(ep); const to = center(wp, WORK_W, WORK_H);
-      parts.push(`<path class="work-link ${item.status}" d="M ${from.x} ${from.y + 36} C ${from.x} ${to.y}, ${to.x} ${from.y + 50}, ${to.x} ${to.y}"></path>`);
+      parts.push(`<path class="work-link ${item.status} ${muted ? "is-muted" : ""}" d="M ${from.x} ${from.y + 36} C ${from.x} ${to.y}, ${to.x} ${from.y + 50}, ${to.x} ${to.y}"></path>`);
     }
   }
   parts.push("</g>");
@@ -287,15 +294,18 @@ function renderEntities(positions) {
 }
 
 function renderWork(positions) {
+  const entitiesById = new Map(snapshot.entities.map((entity) => [entity.id, entity]));
   elements.workLayer.innerHTML = "";
   activeWork().forEach((item) => {
     const p = positions.get(item.id); if (!p) return;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `work-satellite ${item.status} ${item.session ? "has-session" : ""}`;
+    const muted = selectedArea !== "all" && (item.targets || []).length > 0
+      && !(item.targets || []).some((target) => entitiesById.get(target)?.areaId === selectedArea);
+    button.className = `work-satellite ${item.status} ${item.provisional ? "provisional" : ""} ${item.session ? "has-session" : ""} ${muted ? "is-muted" : ""}`;
     button.style.cssText = `left:${p.x}px;top:${p.y}px`;
     button.title = item.session ? "Двойной клик: открыть рабочую сессию" : "Рабочая сессия не привязана";
-    button.innerHTML = `<i></i><span><small>${escapeHtml(item.actor || "agent")} · ${item.status === "active" ? "В РАБОТЕ" : item.status === "blocked" ? "ЖДЁТ" : "ПЛАН"}</small><strong>${escapeHtml(item.title)}</strong></span><b>↗</b>`;
+    button.innerHTML = `<i></i><span><small>${escapeHtml(item.actor || "agent")} · ${item.provisional ? "ОСМЫСЛЯЕТ" : item.status === "active" ? "В РАБОТЕ" : item.status === "blocked" ? "ЖДЁТ" : "ПЛАН"}</small><strong>${escapeHtml(item.title)}</strong></span><b>↗</b>`;
     button.addEventListener("click", (event) => event.stopPropagation());
     button.addEventListener("dblclick", async (event) => { event.preventDefault(); event.stopPropagation(); await openWork(item); });
     elements.workLayer.append(button);
@@ -333,7 +343,7 @@ function renderNow() {
   const items = activeWork();
   elements.nowCount.textContent = String(items.length);
   elements.nowList.innerHTML = items.length ? items.map((item) => {
-    const targets = (item.targets || []).map((id) => snapshot.entities.find((entity) => entity.id === id)?.label).filter(Boolean).join(" · ");
+    const targets = (item.targets || []).map((id) => snapshot.entities.find((entity) => entity.id === id)?.label).filter(Boolean).join(" · ") || "определяет привязку";
     return `<button data-work="${escapeHtml(item.id)}" class="${escapeHtml(item.status)}" type="button"><i></i><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.actor || "agent")} · ${escapeHtml(targets)}</small></span></button>`;
   }).join("") : `<p class="empty-copy">Активной работы нет.</p>`;
   elements.nowList.querySelectorAll("[data-work]").forEach((button) => button.addEventListener("dblclick", () => openWork(items.find((item) => item.id === button.dataset.work))));

@@ -1,6 +1,6 @@
 {
   "name": "repo-canvas",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A local semantic project map with live agent-work satellites and session jumps",
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,7 @@
     "canvas:start": "node repo-canvas/scripts/canvas.mjs start",
     "canvas:check": "node repo-canvas/scripts/canvas.mjs check",
     "test": "node --test tests/*.test.mjs",
+    "test:stress": "node tests/observer-stress.mjs",
     "test:package": "node tests/package-smoke.mjs"
   },
   "keywords": [
@@ -42,5 +43,8 @@
     "visualization",
     "codex",
     "claude"
-  ]
+  ],
+  "dependencies": {
+    "@openai/codex-sdk": "0.144.1"
+  }
 }

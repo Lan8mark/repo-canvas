@@ -265,8 +265,11 @@ function activityLabel(event) {
   const payload = event.payload || {};
   if (event.type === "activity.log") return payload.message || "Activity recorded";
   if (event.type === "area.upsert") return `Area ${payload.title || payload.id} updated`;
+  if (event.type === "area.remove") return `Area ${payload.id} removed: ${payload.reason || "no longer exists"}`;
   if (event.type === "entity.upsert") return `${payload.label || payload.id} → ${payload.status || "updated"}`;
+  if (event.type === "entity.remove") return `Entity ${payload.id} removed: ${payload.reason || "no longer exists"}`;
   if (event.type === "relation.upsert") return `Relation ${payload.from} → ${payload.to}`;
+  if (event.type === "relation.remove") return `Relation ${payload.id} removed`;
   if (event.type === "work.upsert") return `Work ${payload.title || payload.id} → ${payload.status || "updated"}`;
   if (event.type === "task.upsert") return `Task ${payload.title || payload.id} → ${payload.status || "updated"}`;
   if (event.type === "node.upsert") return `${payload.label || payload.id} → ${payload.status || "updated"}`;
@@ -296,15 +299,40 @@ export function reduceEvents(events, errors = []) {
       areas.set(id, { ...(areas.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
     }
 
+    if (event.type === "area.remove") {
+      const id = String(payload.id);
+      const removedEntityIds = [];
+      areas.delete(id);
+      for (const [entityId, entity] of entities) {
+        if (entity.areaId === id) {
+          entities.delete(entityId);
+          removedEntityIds.push(entityId);
+        }
+      }
+      for (const [relationId, relation] of relations) {
+        if (removedEntityIds.includes(relation.from) || removedEntityIds.includes(relation.to)) relations.delete(relationId);
+      }
+    }
+
     if (event.type === "entity.upsert") {
       const id = String(payload.id);
       entities.set(id, { ...(entities.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
+    }
+
+    if (event.type === "entity.remove") {
+      const id = String(payload.id);
+      entities.delete(id);
+      for (const [relationId, relation] of relations) {
+        if (relation.from === id || relation.to === id) relations.delete(relationId);
+      }
     }
 
     if (event.type === "relation.upsert") {
       const id = String(payload.id || `${payload.from}->${payload.to}`);
       relations.set(id, { ...(relations.get(id) || {}), ...payload, id, actor: event.actor, updatedAt: event.ts });
     }
+
+    if (event.type === "relation.remove") relations.delete(String(payload.id));
 
     if (event.type === "work.upsert") {
       const id = String(payload.id);
@@ -392,7 +420,11 @@ export function reduceEvents(events, errors = []) {
   const areaList = [...areas.values()].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || naturalCompare(a.title, b.title));
   const entityList = [...entities.values()].sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || naturalCompare(a.label, b.label));
   const relationList = [...relations.values()];
-  const workList = [...work.values()].sort((a, b) => naturalCompare(a.title, b.title));
+  const entityIds = new Set(entityList.map((entity) => entity.id));
+  const workList = [...work.values()].map((item) => ({
+    ...item,
+    targets: (item.targets || []).filter((id) => entityIds.has(id)),
+  })).sort((a, b) => naturalCompare(a.title, b.title));
   const activeWork = workList.filter((item) => ["active", "blocked", "planned"].includes(item.status));
   const activeEntityIds = [...new Set(activeWork.filter((item) => item.status === "active").flatMap((item) => item.targets || []))];
 

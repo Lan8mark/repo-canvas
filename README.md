@@ -1,50 +1,74 @@
-# Repo Canvas 0.5
+# Repo Canvas 0.6
 
-A zero-dependency local semantic map for large repositories. It shows permanent project structure and overlays current agent work as small session-linked satellites.
+A local semantic map for large repositories. It shows permanent project structure and overlays live Codex work as small session-linked satellites.
+
+## What changed in 0.6
+
+Repo Canvas now maintains itself outside the coding agent's context:
+
+- a subscription-backed **Architect** builds the first semantic map with `gpt-5.6-sol` at medium reasoning;
+- a private **Observer** watches only public Codex session events belonging to this repository;
+- a provisional work card appears as soon as a Codex turn starts;
+- `gpt-5.4-mini` classifies the work from small session deltas and attaches it to semantic entities;
+- completion updates affected passports and can remove a concept only when the session establishes that the concept itself was eliminated;
+- file deletion by itself never deletes a Canvas entity;
+- normal Codex sessions receive no Repo Canvas prompt, hook, or `AGENTS.md` contract.
+
+The observer does not read hidden reasoning, scan product files, control agents, or send owner commands. It reads the same public session journal used by Codex resume/history and filters it by canonical repository root or Git common directory.
 
 ## What the owner sees
 
 - large Miro-like project areas;
 - persistent module and responsibility nodes;
 - meaningful runtime and data relations;
-- small planned, active, or blocked work satellites beside affected entities;
+- small planned, active, blocked, or provisional work satellites;
 - an active orbit on every entity currently being changed;
-- a compact entity passport and recent activity in the left rail;
-- owner layout editing: drag a node directly, or drag an area by its heading to move the whole block; positions persist in the shared map;
-- double-click navigation from work to the exact Codex/Claude session or terminal resume command.
+- entity passports and recent activity in the left rail;
+- draggable areas and nodes with saved owner layout;
+- double-click navigation from work to its Codex App task or CLI resume command.
 
-Repo Canvas does not control agents, index every file, run a daemon, or require a database.
-
-On Codex, the installed project hook reminds the agent on every prompt and blocks product edit tools until a separate verified `work start` has attached the current session to real entity ids. Approve the repository hook when Codex asks for trust, then open a fresh task so it is active from the first prompt. Other agents receive the same mandatory CLI contract through `AGENTS.md`; native hard guards depend on their hook support.
+There is no semantic entity limit. The same canvas can represent four modules or hundreds.
 
 ## Hand-off to another person
 
-Download the latest kit from [GitHub Releases](https://github.com/m0ast-git/repo-canvas/releases), or send the two files inside it: `repo-canvas-0.5.0.tgz` and `INSTALL_WITH_AGENT.txt`.
+Send two files from the release kit: `repo-canvas-0.6.0.tgz` and `INSTALL_WITH_AGENT.txt`.
 
-They copy both into an existing repository root, open a fresh coding-agent conversation there, attach or paste the text file, and ask the agent to install it. The text contains the complete bootstrap acceptance contract.
+The recipient places them in an existing repository, opens one coding-agent conversation there, attaches the text file and asks the agent to install it. After installation, product agents do not need to know Repo Canvas exists.
 
 ## Manual installation
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.5.0.tgz
-npx --no-install repo-canvas init
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.6.0.tgz
+npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
 
-Node.js 22+ is required. The server binds to loopback only. `init` is idempotent and preserves existing owner instructions; conflicts stop with a concrete error.
+Requirements: Node.js 22+, Git, and a locally authenticated Codex subscription. Windows and macOS use the same commands. The server binds to loopback only.
 
-## Semantic CLI
+Useful commands:
 
 ```text
-npm run repo-canvas -- area --id knowledge --title "Knowledge base"
-npm run repo-canvas -- entity --id search --area knowledge --label "Standards search" --status operational --path src/search
-npm run repo-canvas -- relation --from search --to registry --label "queries"
-npm run repo-canvas -- work start --id improve-search --title "Improve matching" --targets search,registry --note "Tighten matching" --actor codex
+npm run repo-canvas -- doctor
+npm run repo-canvas -- architect --refresh
+npm run repo-canvas -- observer status
 npm run repo-canvas -- snapshot
 npm run repo-canvas -- check
 ```
 
-Legacy v0.3 task/node/edge events remain readable after upgrade, but new agents use area/entity/relation/work.
+Model profiles can be overridden without code changes:
+
+```text
+REPO_CANVAS_ARCHITECT_MODEL
+REPO_CANVAS_ARCHITECT_EFFORT
+REPO_CANVAS_OBSERVER_MODEL
+REPO_CANVAS_OBSERVER_EFFORT
+```
+
+Legacy semantic CLI commands and v0.3-v0.5 event logs remain readable after upgrade.
+
+## Privacy boundary
+
+Repo Canvas stores its semantic event log and observer cursor in the repository's ignored `.repo-canvas/` directory. Model calls use the user's existing local Codex authentication through the official Codex SDK. No API key is copied into the project.
 
 ## License
 
