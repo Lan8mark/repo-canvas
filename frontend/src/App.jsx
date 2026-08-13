@@ -9,6 +9,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { canvasApi, reloadToken } from "./api.js";
+import { focusColumnOffset } from "./edge-routing.js";
 import { LAYOUT_VERSION, activeWork, areaTitle, buildGraph, entityLabel, neighborSet } from "./graph.js";
 import { edgeTypes, nodeTypes } from "./graph-elements.jsx";
 
@@ -130,6 +131,18 @@ export default function App() {
     const focusedRelationIds = new Set(focusRelationItems.map((relation) => relation.id));
     const activeIds = new Set(snapshot.activeEntityIds || []);
     const focusPositions = new Map();
+    const columnOffset = focusColumnOffset(focusRelationItems);
+
+    const placeColumn = (ids, x, centerY, nodeById) => {
+      const gap = 52;
+      const heights = ids.map((id) => Number(nodeById.get(id)?.style?.height || nodeById.get(id)?.measured?.height || 136));
+      const totalHeight = heights.reduce((sum, height) => sum + height, 0) + Math.max(0, ids.length - 1) * gap;
+      let y = centerY - totalHeight / 2;
+      ids.forEach((id, index) => {
+        focusPositions.set(id, { x, y });
+        y += heights[index] + gap;
+      });
+    };
 
     if (selectedBridge) {
       const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -145,14 +158,8 @@ export default function App() {
         x: ((leftAreaNode?.position.x || 0) + (rightAreaNode?.position.x || 0)) / 2,
         y: ((leftAreaNode?.position.y || 0) + (rightAreaNode?.position.y || 0)) / 2,
       };
-      leftIds.forEach((id, index) => focusPositions.set(id, {
-        x: anchor.x - 346,
-        y: anchor.y + (index - (leftIds.length - 1) / 2) * 190,
-      }));
-      rightIds.forEach((id, index) => focusPositions.set(id, {
-        x: anchor.x + 346,
-        y: anchor.y + (index - (rightIds.length - 1) / 2) * 190,
-      }));
+      placeColumn(leftIds, anchor.x - columnOffset / 2, anchor.y, nodeById);
+      placeColumn(rightIds, anchor.x + columnOffset / 2, anchor.y, nodeById);
     } else if (selectedId) {
       const nodeById = new Map(nodes.map((node) => [node.id, node]));
       const selectedNode = nodeById.get(selectedId);
@@ -177,14 +184,10 @@ export default function App() {
       }
 
       focusPositions.set(selectedId, anchor);
-      left.forEach((id, index) => focusPositions.set(id, {
-        x: anchor.x - 346,
-        y: anchor.y + (index - (left.length - 1) / 2) * 190,
-      }));
-      right.forEach((id, index) => focusPositions.set(id, {
-        x: anchor.x + 346,
-        y: anchor.y + (index - (right.length - 1) / 2) * 190,
-      }));
+      const selectedHeight = Number(selectedNode?.style?.height || selectedNode?.measured?.height || 136);
+      const centerY = anchor.y + selectedHeight / 2;
+      placeColumn(left, anchor.x - columnOffset, centerY, nodeById);
+      placeColumn(right, anchor.x + columnOffset, centerY, nodeById);
     }
 
     return {

@@ -10,16 +10,13 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .entity-node .node-port--in{left:-5px}
 .entity-node .node-port--out{right:-5px}
 .entity-node .node-port.is-muted{opacity:0}
-.entity-node .port-axis{position:absolute;z-index:7;top:47px;padding:3px 5px;border:1px solid currentColor;border-radius:7px;background:#fffdf9;font:600 6px "JetBrains Mono";letter-spacing:.06em;line-height:1;color:#778da0;opacity:.72}
-.entity-node .port-axis--in{left:-7px;transform:translateX(-100%)}
-.entity-node .port-axis--out{right:-7px;transform:translateX(100%);color:#378d6b}
 .react-flow .react-flow__edge{transition:opacity .16s}
 .react-flow .react-flow__edge-path{stroke:#9d9188;stroke-width:1.2;opacity:.2}
 .react-flow .react-flow__edge.is-cross-area:not(.edge-is-focused){opacity:0}
 .react-flow .react-flow__edge.edge-is-dimmed{opacity:.025}
 .react-flow .react-flow__edge.edge-is-focused{opacity:1}
 .react-flow .react-flow__edge-path.is-focused{stroke:var(--orange);stroke-width:2.6;opacity:1}
-.react-flow .edge-label{pointer-events:none;opacity:0;max-width:78px;transition:opacity .16s}
+.react-flow .edge-label{pointer-events:none;opacity:0;transition:opacity .16s}
 .react-flow .edge-label.is-focused{pointer-events:auto;opacity:1}
 .react-flow .edge-label.is-dimmed:not(.is-focused){opacity:0}
 .area-link-handle{opacity:0!important;pointer-events:none!important}
@@ -43,7 +40,6 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .area-node.area-node::after{border-color:rgba(142,123,107,.52)}
 .entity-node.entity-node{background:#f3ede5;border-color:rgba(48,137,102,.55);box-shadow:0 12px 27px rgba(52,74,64,.16)}
 .entity-node.entity-node:hover{background:#f7f1e9;box-shadow:0 16px 34px rgba(52,74,64,.22)}
-.entity-node .port-axis{background:#e7ded5}
 .canvas-toolbar.canvas-toolbar button,.navigation-rail.navigation-rail>header button,.inspector.inspector footer button{background:#ddd4cb;border-color:#bcaea2;box-shadow:none}
 .canvas-toolbar.canvas-toolbar button:hover,.navigation-rail.navigation-rail>header button:hover,.inspector.inspector footer button:hover{background:#d3c7bc}
 .canvas-toolbar .layout-lock{min-width:91px;background:#d4cbc2}
@@ -56,7 +52,8 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .inspector.inspector section>button:hover{background:#edcbb6}
 .focus-toolbar.focus-toolbar{background:#e8e0d8;border-color:#b8aa9f}
 .focus-toolbar.bridge-toolbar b{padding:0 9px;font:600 8px "JetBrains Mono";color:#6b574b}
-.edge-label.edge-label{background:#e8dfd6;border-color:#b5a396}
+.edge-label.edge-label{background:#e8dfd6;border-color:#b5a396;border-radius:6px;padding:4px 7px}
+.react-flow .react-flow__edge-semantic .react-flow__edge-path{stroke-linejoin:miter;shape-rendering:geometricPrecision}
 .entity-node.has-area-context{border-top-color:var(--area-color)}
 .entity-meta{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
 .area-context{display:flex;align-items:center;gap:5px;min-width:0;max-width:108px;padding:3px 6px;border:1px solid color-mix(in srgb,var(--area-color) 24%,transparent);border-radius:999px;background:color-mix(in srgb,var(--area-color) 8%,#fff);font:600 6px "JetBrains Mono";letter-spacing:.02em;color:#756d67}

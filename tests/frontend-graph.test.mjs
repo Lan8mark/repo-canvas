@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { focusColumnOffset, orthogonalRelationPath, relationLabelWidth } from "../frontend/src/edge-routing.js";
 import { LAYOUT_VERSION, buildGraph } from "../frontend/src/graph.js";
 
 function snapshot(overrides = {}) {
@@ -55,4 +56,20 @@ test("React Flow layout preserves coordinates written by its own layout version"
 
   assert.deepEqual(graph.nodes.find((node) => node.id === "area:alpha").position, { x: 200, y: 300 });
   assert.deepEqual(graph.nodes.find((node) => node.id === "source").position, { x: 60, y: 110 });
+});
+
+test("focused relation routing reserves a straight caption runway", () => {
+  const label = "publishes typed operation contracts";
+  const offset = focusColumnOffset([{ label }]);
+  const route = orthogonalRelationPath({
+    sourceX: 264,
+    sourceY: 80,
+    targetX: offset,
+    targetY: 240,
+    label,
+  });
+
+  assert.match(route.path, /^M .* H .* V .* H .* V .* H /);
+  assert.ok(route.runway >= relationLabelWidth(label) + 24);
+  assert.equal(route.labelY, 160);
 });

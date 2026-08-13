@@ -6,6 +6,7 @@ import {
   Position,
   getBezierPath,
 } from "@xyflow/react";
+import { orthogonalRelationPath } from "./edge-routing.js";
 
 const statusLabels = {
   operational: "работает",
@@ -31,15 +32,11 @@ function Port({ side, port, index, total, active }) {
 
 export const EntityNode = memo(function EntityNode({ data, selected }) {
   const { entity, incoming = [], outgoing = [] } = data;
-  const activeIncoming = data.focusedRelationIds ? incoming.filter((port) => data.focusedRelationIds.has(port.id)) : incoming;
-  const activeOutgoing = data.focusedRelationIds ? outgoing.filter((port) => data.focusedRelationIds.has(port.id)) : outgoing;
   return (
     <article
       className={`entity-node status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""} ${data.showAreaContext ? "has-area-context" : ""}`}
       style={data.showAreaContext ? { "--area-color": data.areaColor } : undefined}
     >
-      {activeIncoming.length ? <span className="port-axis port-axis--in">IN · {activeIncoming.length}</span> : null}
-      {activeOutgoing.length ? <span className="port-axis port-axis--out">OUT · {activeOutgoing.length}</span> : null}
       {incoming.map((port, index) => <Port key={port.id} side="in" port={port} index={index} total={incoming.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
       {outgoing.map((port, index) => <Port key={port.id} side="out" port={port} index={index} total={outgoing.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
       <header>
@@ -88,7 +85,7 @@ export const WorkNode = memo(function WorkNode({ data, selected }) {
 });
 
 export const SemanticEdge = memo(function SemanticEdge(props) {
-  const [path, labelX, labelY] = getBezierPath({ ...props, curvature: 0.32 });
+  const { path, labelX, labelY, labelWidth } = orthogonalRelationPath({ ...props, label: props.label });
   const active = props.data?.focused;
   return (
     <>
@@ -97,7 +94,10 @@ export const SemanticEdge = memo(function SemanticEdge(props) {
         <button
           type="button"
           className={`edge-label nodrag nopan ${active ? "is-focused" : ""} ${props.data?.dimmed ? "is-dimmed" : ""}`}
-          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          style={{
+            maxWidth: `${labelWidth}px`,
+            transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 7}px)`,
+          }}
           title={`${props.label} · двойной клик для переименования`}
           onDoubleClick={(event) => { event.stopPropagation(); props.data?.onRename?.(); }}
         >
