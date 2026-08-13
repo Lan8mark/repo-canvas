@@ -7,7 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { compareVersions, normalizeVersion } from "../repo-canvas/scripts/runtime-version.mjs";
-import { releaseCandidate } from "../repo-canvas/scripts/update-service.mjs";
+import { RELEASE_REPOSITORY, releaseCandidate } from "../repo-canvas/scripts/update-service.mjs";
 
 async function removeTemporaryDirectory(directory) {
   let lastError;
@@ -27,13 +27,13 @@ function release(version, overrides = {}) {
     tag_name: `v${version}`,
     draft: false,
     prerelease: false,
-    html_url: `https://github.com/m0ast-git/repo-canvas/releases/tag/v${version}`,
+    html_url: `https://github.com/Lan8mark/repo-canvas/releases/tag/v${version}`,
     assets: [{
       name: `repo-canvas-${version}.tgz`,
       state: "uploaded",
       size: 1234,
       digest: `sha256:${"a".repeat(64)}`,
-      browser_download_url: `https://github.com/m0ast-git/repo-canvas/releases/download/v${version}/repo-canvas-${version}.tgz`,
+      browser_download_url: `https://github.com/Lan8mark/repo-canvas/releases/download/v${version}/repo-canvas-${version}.tgz`,
     }],
     ...overrides,
   };
@@ -47,6 +47,7 @@ test("semantic versions compare without a dependency", () => {
 });
 
 test("release discovery accepts only a newer verified official tgz", () => {
+  assert.equal(RELEASE_REPOSITORY, "Lan8mark/repo-canvas");
   assert.equal(releaseCandidate(release("0.8.6"), "0.8.5")?.version, "0.8.6");
   assert.equal(releaseCandidate(release("0.8.5"), "0.8.5"), null);
   assert.equal(releaseCandidate(release("0.8.6", { prerelease: true }), "0.8.5"), null);
@@ -56,6 +57,9 @@ test("release discovery accepts only a newer verified official tgz", () => {
   const wrongHost = release("0.8.6");
   wrongHost.assets[0].browser_download_url = "https://example.com/repo-canvas-0.8.6.tgz";
   assert.equal(releaseCandidate(wrongHost, "0.8.5"), null);
+  const wrongRepository = release("0.8.6");
+  wrongRepository.assets[0].browser_download_url = "https://github.com/m0ast-git/repo-canvas/releases/download/v0.8.6/repo-canvas-0.8.6.tgz";
+  assert.equal(releaseCandidate(wrongRepository, "0.8.5"), null);
 });
 
 test("the installed bootstrap delegates commands to a newer project-local runtime", async () => {

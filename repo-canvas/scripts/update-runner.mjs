@@ -8,6 +8,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 const MAX_ASSET_BYTES = 50 * 1024 * 1024;
+const RELEASE_REPOSITORY = "Lan8mark/repo-canvas";
 
 function jobFromEnvironment() {
   const job = JSON.parse(process.env.REPO_CANVAS_UPDATE_JOB || "null");
@@ -37,7 +38,7 @@ async function waitForParent(pid) {
 
 function validateDownloadUrl(url, release, allowNonGithub) {
   if (allowNonGithub) return;
-  const expected = `https://github.com/m0ast-git/repo-canvas/releases/download/v${release.version}/${release.assetName}`;
+  const expected = `https://github.com/${RELEASE_REPOSITORY}/releases/download/v${release.version}/${release.assetName}`;
   if (url !== expected) throw new Error("Release asset URL does not match the official Repo Canvas release");
 }
 

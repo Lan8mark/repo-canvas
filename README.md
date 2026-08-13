@@ -9,14 +9,14 @@ Repo Canvas builds a local, Miro-like map of an existing project. Permanent area
 Send your agent this repository URL and one sentence:
 
 ```text
-https://github.com/m0ast-git/repo-canvas
+https://github.com/Lan8mark/repo-canvas
 Install this project-visualization tool in the current repository, build the initial map, start it and give me the local Canvas URL.
 ```
 
 The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.9
+npm install --save-dev --save-exact --ignore-scripts github:Lan8mark/repo-canvas#v0.9.0
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
@@ -74,12 +74,12 @@ From v0.8.6 onward, Canvas checks the public GitHub release feed in the backgrou
 
 ## Offline installation
 
-Download `repo-canvas-0.8.9-kit.zip` from the [latest release](https://github.com/m0ast-git/repo-canvas/releases/latest). Copy `repo-canvas-0.8.9.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+Download `repo-canvas-0.9.0-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.9.0.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
 
 Manual commands:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.9.tgz
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.9.0.tgz
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```

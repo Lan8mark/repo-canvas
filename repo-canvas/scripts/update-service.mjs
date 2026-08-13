@@ -6,7 +6,8 @@ import { spawn } from "node:child_process";
 import { packageRoot, projectRoot, resolveDataDirectory } from "./project-root.mjs";
 import { compareVersions, normalizeVersion } from "./runtime-version.mjs";
 
-const RELEASE_API = "https://api.github.com/repos/m0ast-git/repo-canvas/releases/latest";
+export const RELEASE_REPOSITORY = "Lan8mark/repo-canvas";
+const RELEASE_API = `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/latest`;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_ASSET_BYTES = 50 * 1024 * 1024;
@@ -37,7 +38,7 @@ export function releaseCandidate(release, currentVersion, { allowNonGithub = fal
   const asset = Array.isArray(release.assets) ? release.assets.find((item) => item?.name === expectedName) : null;
   const digest = String(asset?.digest || "").match(/^sha256:([a-f0-9]{64})$/i)?.[1]?.toLowerCase();
   const downloadUrl = String(asset?.browser_download_url || "");
-  const expectedPrefix = `https://github.com/m0ast-git/repo-canvas/releases/download/v${version}/`;
+  const expectedPrefix = `https://github.com/${RELEASE_REPOSITORY}/releases/download/v${version}/`;
   if (!asset || asset.state !== "uploaded" || !digest || (!allowNonGithub && !downloadUrl.startsWith(expectedPrefix))) return null;
   const size = Number(asset.size);
   if (!Number.isInteger(size) || size < 1 || size > MAX_ASSET_BYTES) return null;
@@ -48,7 +49,7 @@ export function releaseCandidate(release, currentVersion, { allowNonGithub = fal
     size,
     digest,
     downloadUrl,
-    releaseUrl: String(release.html_url || `https://github.com/m0ast-git/repo-canvas/releases/tag/v${version}`),
+    releaseUrl: String(release.html_url || `https://github.com/${RELEASE_REPOSITORY}/releases/tag/v${version}`),
     publishedAt: release.published_at || null,
   };
 }
