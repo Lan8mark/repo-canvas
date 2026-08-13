@@ -3,8 +3,7 @@ import { MarkerType } from "@xyflow/react";
 
 const elk = new ELK();
 export const ENTITY_WIDTH = 264;
-export const WORK_WIDTH = 220;
-export const WORK_HEIGHT = 76;
+export const LAYOUT_VERSION = "react-flow-elk-v2";
 
 export function areaTitle(area) {
   return area?.ownerTitle || area?.title || "Область";
@@ -24,6 +23,10 @@ export function activeWork(snapshot) {
 
 function finite(value) {
   return Number.isFinite(Number(value));
+}
+
+function hasCurrentLayout(item) {
+  return item?.layoutVersion === LAYOUT_VERSION;
 }
 
 function portsFor(entity, relations) {
@@ -69,43 +72,27 @@ async function layoutArea(area, entities, relations) {
   };
 }
 
-async function layoutAreas(areas, areaLayouts, entities, relations) {
-  const entityArea = new Map(entities.map((entity) => [entity.id, entity.areaId]));
-  const seenPairs = new Set();
-  const edges = [];
-  for (const relation of relations) {
-    const source = entityArea.get(relation.from);
-    const target = entityArea.get(relation.to);
-    if (!source || !target || source === target) continue;
-    const key = `${source}->${target}`;
-    if (seenPairs.has(key)) continue;
-    seenPairs.add(key);
-    edges.push({ id: `area-edge:${key}`, sources: [source], targets: [target] });
-  }
-  const graph = await elk.layout({
-    id: "project",
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "RIGHT",
-      "elk.edgeRouting": "ORTHOGONAL",
-      "elk.spacing.nodeNode": "120",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "180",
-      "elk.padding": "[top=60,left=60,bottom=60,right=60]",
-    },
-    children: areas.map((area) => ({
-      id: area.id,
-      width: areaLayouts.get(area.id).width,
-      height: areaLayouts.get(area.id).height,
-    })),
-    edges,
-  });
-  return new Map((graph.children || []).map((node) => [node.id, { x: node.x || 60, y: node.y || 60 }]));
-}
+function packAreas(areas, areaLayouts, { margin = 60, gap = 110, aspect = 1.55 } = {}) {
+  const rectangles = areas.map((area) => ({ id: area.id, ...areaLayouts.get(area.id) }));
+  const widest = Math.max(1, ...rectangles.map((item) => item.width));
+  const footprint = rectangles.reduce((sum, item) => sum + (item.width + gap) * (item.height + gap), 0);
+  const targetWidth = Math.max(widest, Math.sqrt(Math.max(1, footprint) * aspect));
+  const positions = new Map();
+  let x = margin;
+  let y = margin;
+  let rowHeight = 0;
 
-function absolutePosition(node, areaPositions) {
-  if (!node.parentId) return node.position;
-  const parent = areaPositions.get(node.parentId.replace(/^area:/, "")) || { x: 0, y: 0 };
-  return { x: parent.x + node.position.x, y: parent.y + node.position.y };
+  for (const item of rectangles) {
+    if (x > margin && x + item.width > margin + targetWidth) {
+      x = margin;
+      y += rowHeight + gap;
+      rowHeight = 0;
+    }
+    positions.set(item.id, { x, y });
+    x += item.width + gap;
+    rowHeight = Math.max(rowHeight, item.height);
+  }
+  return positions;
 }
 
 export async function buildGraph(snapshot) {
@@ -119,10 +106,10 @@ export async function buildGraph(snapshot) {
     areaLayouts.set(area.id, await layoutArea(area, members, relations));
   }));
 
-  const automaticAreas = await layoutAreas(areas, areaLayouts, entities, relations);
+  const automaticAreas = packAreas(areas, areaLayouts);
   const areaPositions = new Map(areas.map((area) => [area.id, {
-    x: finite(area.x) ? Number(area.x) : automaticAreas.get(area.id)?.x || 60,
-    y: finite(area.y) ? Number(area.y) : automaticAreas.get(area.id)?.y || 60,
+    x: hasCurrentLayout(area) && finite(area.x) ? Number(area.x) : automaticAreas.get(area.id)?.x || 60,
+    y: hasCurrentLayout(area) && finite(area.y) ? Number(area.y) : automaticAreas.get(area.id)?.y || 60,
   }]));
 
   const areaNodes = areas.map((area) => {
@@ -132,7 +119,7 @@ export async function buildGraph(snapshot) {
     let height = layout.height;
     const origin = areaPositions.get(area.id);
     for (const entity of members) {
-      if (!finite(entity.x) || !finite(entity.y)) continue;
+      if (!hasCurrentLayout(entity) || !finite(entity.x) || !finite(entity.y)) continue;
       width = Math.max(width, Number(entity.x) - origin.x + ENTITY_WIDTH + 44);
       height = Math.max(height, Number(entity.y) - origin.y + entityHeight(entity, relations) + 44);
     }
@@ -151,7 +138,7 @@ export async function buildGraph(snapshot) {
   const entityNodes = entities.map((entity) => {
     const areaPosition = areaPositions.get(entity.areaId) || { x: 0, y: 0 };
     const automatic = areaLayouts.get(entity.areaId)?.positions.get(entity.id) || { x: 44, y: 92 };
-    const position = finite(entity.x) && finite(entity.y)
+    const position = hasCurrentLayout(entity) && finite(entity.x) && finite(entity.y)
       ? { x: Number(entity.x) - areaPosition.x, y: Number(entity.y) - areaPosition.y }
       : automatic;
     const ports = portsFor(entity, relations);
@@ -167,22 +154,7 @@ export async function buildGraph(snapshot) {
     };
   });
 
-  const allBaseNodes = [...areaNodes, ...entityNodes];
-  const nodeById = new Map(allBaseNodes.map((node) => [node.id, node]));
-  const workNodes = activeWork(snapshot).map((work, index) => {
-    const target = work.targets?.find((id) => nodeById.has(id));
-    const targetNode = target ? nodeById.get(target) : null;
-    const targetPosition = targetNode ? absolutePosition(targetNode, areaPositions) : { x: 80 + (index % 4) * 250, y: 20 };
-    return {
-      id: `work:${work.id}`,
-      type: "work",
-      position: { x: targetPosition.x + 20, y: targetPosition.y - 112 - (index % 2) * 18 },
-      data: { work },
-      style: { width: WORK_WIDTH, height: WORK_HEIGHT },
-      draggable: false,
-      zIndex: 5,
-    };
-  });
+  const entityArea = new Map(entities.map((entity) => [entity.id, entity.areaId]));
 
   const relationEdges = relations.map((relation) => ({
     id: `relation:${relation.id}`,
@@ -194,24 +166,14 @@ export async function buildGraph(snapshot) {
     label: relationLabel(relation),
     data: { relation },
     markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13 },
-    className: relation.status === "planned" ? "is-planned" : "",
+    className: [
+      relation.status === "planned" ? "is-planned" : "",
+      entityArea.get(relation.from) !== entityArea.get(relation.to) ? "is-cross-area" : "",
+    ].filter(Boolean).join(" "),
     zIndex: 1,
   }));
 
-  const workEdges = activeWork(snapshot).flatMap((work) => (work.targets || [])
-    .filter((target) => nodeById.has(target))
-    .map((target) => ({
-      id: `work-edge:${work.id}:${target}`,
-      type: "work",
-      source: `work:${work.id}`,
-      target,
-      targetHandle: "work",
-      data: { work },
-      animated: work.status === "active",
-      zIndex: 3,
-    })));
-
-  return { nodes: [...areaNodes, ...entityNodes, ...workNodes], edges: [...relationEdges, ...workEdges] };
+  return { nodes: [...areaNodes, ...entityNodes], edges: relationEdges };
 }
 
 export function neighborSet(snapshot, selectedId, direction = "all") {

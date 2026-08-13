@@ -5,7 +5,6 @@ import {
   Handle,
   Position,
   getBezierPath,
-  getSmoothStepPath,
 } from "@xyflow/react";
 
 const statusLabels = {
@@ -15,30 +14,31 @@ const statusLabels = {
   disabled: "отключено",
 };
 
-function Port({ side, port, index, total }) {
-  const top = `${((index + 1) / (total + 1)) * 100}%`;
+function Port({ side, port, index, total, active }) {
+  const top = `${24 + ((index + 1) / (total + 1)) * 68}%`;
   const incoming = side === "in";
   return (
-    <div className={`node-port node-port--${side}`} style={{ top }} title={`${incoming ? "Вход" : "Выход"}: ${port.label}`}>
-      {incoming ? <span>{port.label}</span> : null}
+    <div className={`node-port node-port--${side} ${active ? "is-active" : "is-muted"}`} style={{ top }} title={`${incoming ? "Вход" : "Выход"}: ${port.label}`}>
       <Handle
         id={`${side}:${port.id}`}
         type={incoming ? "target" : "source"}
         position={incoming ? Position.Left : Position.Right}
         className={`semantic-handle semantic-handle--${side}`}
       />
-      {!incoming ? <span>{port.label}</span> : null}
     </div>
   );
 }
 
 export const EntityNode = memo(function EntityNode({ data, selected }) {
   const { entity, incoming = [], outgoing = [] } = data;
+  const activeIncoming = data.focusedRelationIds ? incoming.filter((port) => data.focusedRelationIds.has(port.id)) : incoming;
+  const activeOutgoing = data.focusedRelationIds ? outgoing.filter((port) => data.focusedRelationIds.has(port.id)) : outgoing;
   return (
     <article className={`entity-node status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""}`}>
-      <Handle id="work" type="target" position={Position.Top} className="work-target-handle" />
-      {incoming.map((port, index) => <Port key={port.id} side="in" port={port} index={index} total={incoming.length} />)}
-      {outgoing.map((port, index) => <Port key={port.id} side="out" port={port} index={index} total={outgoing.length} />)}
+      {activeIncoming.length ? <span className="port-axis port-axis--in">IN · {activeIncoming.length}</span> : null}
+      {activeOutgoing.length ? <span className="port-axis port-axis--out">OUT · {activeOutgoing.length}</span> : null}
+      {incoming.map((port, index) => <Port key={port.id} side="in" port={port} index={index} total={incoming.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
+      {outgoing.map((port, index) => <Port key={port.id} side="out" port={port} index={index} total={outgoing.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
       <header>
         <span className="entity-status"><i />{statusLabels[entity.status] || entity.status}</span>
         {data.activeWork ? <span className="live-badge">в работе</span> : null}
@@ -75,7 +75,7 @@ export const WorkNode = memo(function WorkNode({ data, selected }) {
 });
 
 export const SemanticEdge = memo(function SemanticEdge(props) {
-  const [path, labelX, labelY] = getSmoothStepPath({ ...props, borderRadius: 14, offset: 28 });
+  const [path, labelX, labelY] = getBezierPath({ ...props, curvature: 0.32 });
   const active = props.data?.focused;
   return (
     <>

@@ -167,7 +167,9 @@ async function readJson(request) {
 
 function saveLayout(body) {
   const requestedRevision = Number(body.canvasRevision);
+  const layoutVersion = body.layoutVersion === undefined ? null : String(body.layoutVersion).trim();
   if (!Number.isInteger(requestedRevision) || requestedRevision < 0) throw new HttpError(400, "canvasRevision must be a non-negative integer");
+  if (layoutVersion !== null && (!layoutVersion || layoutVersion.length > 64 || !/^[a-z0-9._-]+$/i.test(layoutVersion))) throw new HttpError(400, "layoutVersion must be a short identifier");
   if (!Array.isArray(body.items) || body.items.length === 0) throw new HttpError(400, "items must be a non-empty array");
   const snapshot = getSnapshot();
   if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before saving layout");
@@ -184,12 +186,12 @@ function saveLayout(body) {
     if (kind === "area") {
       const current = areas.get(id); if (!current) throw new HttpError(404, `Area not found: ${id}`);
       const { actor, updatedAt, ...payload } = current;
-      return createEvent("area.upsert", { actor: "owner", payload: { ...payload, x, y } });
+      return createEvent("area.upsert", { actor: "owner", payload: { ...payload, x, y, ...(layoutVersion ? { layoutVersion } : {}) } });
     }
     if (kind === "entity") {
       const current = entities.get(id); if (!current) throw new HttpError(404, `Entity not found: ${id}`);
       const { actor, updatedAt, ...payload } = current;
-      return createEvent("entity.upsert", { actor: "owner", payload: { ...payload, x, y } });
+      return createEvent("entity.upsert", { actor: "owner", payload: { ...payload, x, y, ...(layoutVersion ? { layoutVersion } : {}) } });
     }
     throw new HttpError(400, `Unsupported layout item kind: ${kind}`);
   });

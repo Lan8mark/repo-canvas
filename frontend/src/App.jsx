@@ -9,7 +9,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { canvasApi, reloadToken } from "./api.js";
-import { activeWork, areaTitle, buildGraph, entityLabel, neighborSet } from "./graph.js";
+import { LAYOUT_VERSION, activeWork, areaTitle, buildGraph, entityLabel, neighborSet } from "./graph.js";
 import { edgeTypes, nodeTypes } from "./graph-elements.jsx";
 
 function relativeTime(value) {
@@ -38,6 +38,7 @@ export default function App() {
   const [initialFit, setInitialFit] = useState(false);
   const snapshotRef = useRef(null);
   const busyRef = useRef(false);
+  const previousSelectedRef = useRef(null);
   const { fitView, getNodes, setCenter, zoomIn, zoomOut } = useReactFlow();
 
   const notify = useCallback((text, error = false) => {
@@ -113,15 +114,51 @@ export default function App() {
     if (!snapshot) return { nodes, edges };
     const visible = neighborSet(snapshot, selectedId, direction);
     const hasFocus = Boolean(selectedId);
-    const focusedRelations = new Set((snapshot.relations || [])
+    const focusRelationItems = (snapshot.relations || [])
       .filter((relation) => {
         if (!selectedId) return false;
         if (direction === "in") return relation.to === selectedId;
         if (direction === "out") return relation.from === selectedId;
         return relation.from === selectedId || relation.to === selectedId;
-      })
-      .map((relation) => `relation:${relation.id}`));
+      });
+    const focusedRelations = new Set(focusRelationItems.map((relation) => `relation:${relation.id}`));
+    const focusedRelationIds = new Set(focusRelationItems.map((relation) => relation.id));
     const activeIds = new Set(snapshot.activeEntityIds || []);
+    const focusPositions = new Map();
+
+    if (selectedId) {
+      const nodeById = new Map(nodes.map((node) => [node.id, node]));
+      const selectedNode = nodeById.get(selectedId);
+      const parentNode = selectedNode?.parentId ? nodeById.get(selectedNode.parentId) : null;
+      const anchor = selectedNode ? {
+        x: (parentNode?.position.x || 0) + selectedNode.position.x,
+        y: (parentNode?.position.y || 0) + selectedNode.position.y,
+      } : { x: 0, y: 0 };
+      const left = [];
+      const right = [];
+      const placed = new Set([selectedId]);
+
+      for (const relation of snapshot.relations || []) {
+        if (!focusedRelations.has(`relation:${relation.id}`)) continue;
+        if (relation.to === selectedId && !placed.has(relation.from)) {
+          left.push(relation.from);
+          placed.add(relation.from);
+        } else if (relation.from === selectedId && !placed.has(relation.to)) {
+          right.push(relation.to);
+          placed.add(relation.to);
+        }
+      }
+
+      focusPositions.set(selectedId, anchor);
+      left.forEach((id, index) => focusPositions.set(id, {
+        x: anchor.x - 346,
+        y: anchor.y + (index - (left.length - 1) / 2) * 190,
+      }));
+      right.forEach((id, index) => focusPositions.set(id, {
+        x: anchor.x + 346,
+        y: anchor.y + (index - (right.length - 1) / 2) * 190,
+      }));
+    }
 
     return {
       nodes: nodes.map((node) => {
@@ -129,27 +166,40 @@ export default function App() {
         const workId = node.type === "work" ? node.id.slice(5) : null;
         const work = workId ? snapshot.work.find((item) => item.id === workId) : null;
         const workVisible = work?.targets?.some((id) => visible.has(id));
+        const focusPosition = entityId ? focusPositions.get(entityId) : null;
         return {
           ...node,
+          ...(focusPosition ? {
+            parentId: undefined,
+            extent: undefined,
+            position: focusPosition,
+            draggable: false,
+            zIndex: 8,
+          } : hasFocus ? { draggable: false } : {}),
           data: {
             ...node.data,
             focused: entityId === selectedId,
             activeWork: entityId ? activeIds.has(entityId) : false,
+            focusedRelationIds: hasFocus ? focusedRelationIds : null,
             dimmed: hasFocus && (entityId ? !visible.has(entityId) : workId ? !workVisible : node.type === "area"),
           },
         };
       }),
-      edges: edges.map((edge) => ({
-        ...edge,
-        data: {
-          ...edge.data,
-          focused: focusedRelations.has(edge.id),
-          dimmed: hasFocus && !focusedRelations.has(edge.id) && !edge.id.startsWith("work-edge:"),
-          onRename: edge.data?.relation
-            ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: edge.label })
-            : undefined,
-        },
-      })),
+      edges: edges.map((edge) => {
+        const focused = focusedRelations.has(edge.id);
+        return {
+          ...edge,
+          className: [edge.className, focused ? "edge-is-focused" : hasFocus ? "edge-is-dimmed" : ""].filter(Boolean).join(" "),
+          data: {
+            ...edge.data,
+            focused,
+            dimmed: hasFocus && !focused,
+            onRename: edge.data?.relation
+              ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: edge.label })
+              : undefined,
+          },
+        };
+      }),
     };
   }, [snapshot, nodes, edges, selectedId, direction]);
 
@@ -158,18 +208,28 @@ export default function App() {
     if (node.type === "work") { setSelectedWorkId(node.id.slice(5)); setSelectedId(null); }
   }, []);
 
-  const focusEntity = useCallback((id, center = false) => {
+  const focusEntity = useCallback((id) => {
     setSelectedId(id);
     setSelectedWorkId(null);
-    if (!center) return;
-    const current = getNodes();
-    const node = current.find((item) => item.id === id);
-    if (!node) return;
-    const area = node.parentId ? current.find((item) => item.id === node.parentId) : null;
-    const x = (area?.position.x || 0) + node.position.x + (node.measured?.width || 264) / 2;
-    const y = (area?.position.y || 0) + node.position.y + (node.measured?.height || 140) / 2;
-    setCenter(x, y, { zoom: .82, duration: 500 });
-  }, [getNodes, setCenter]);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId || !snapshot) return;
+    const timer = window.setTimeout(() => {
+      const visible = neighborSet(snapshot, selectedId, direction);
+      const focusNodes = getNodes().filter((node) => node.type === "entity" && visible.has(node.id));
+      if (focusNodes.length) fitView({ nodes: focusNodes, padding: .14, maxZoom: .82, duration: 500 });
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [selectedId, direction, snapshot, getNodes, fitView]);
+
+  useEffect(() => {
+    const previous = previousSelectedRef.current;
+    previousSelectedRef.current = selectedId;
+    if (!previous || selectedId) return;
+    const timer = window.setTimeout(() => fitView({ padding: .12, duration: 500 }), 280);
+    return () => window.clearTimeout(timer);
+  }, [selectedId, fitView]);
 
   const onNodeDoubleClick = useCallback((_, node) => {
     if (!snapshotRef.current) return;
@@ -198,7 +258,7 @@ export default function App() {
         const parent = current.find((item) => item.id === node.parentId);
         items.push({ kind: "entity", id: node.id, x: (parent?.position.x || 0) + node.position.x, y: (parent?.position.y || 0) + node.position.y });
       }
-      await canvasApi.saveLayout(snapshotRef.current.revision, items);
+      await canvasApi.saveLayout(snapshotRef.current.revision, items, LAYOUT_VERSION);
       notify(node.type === "area" ? "Область перемещена" : "Позиция сохранена");
       await refresh(true);
     } catch (error) { notify(error.message, true); await refresh(true); }
@@ -267,13 +327,13 @@ export default function App() {
         <div className="telemetry"><span><small>ОБЛАСТИ</small><strong>{snapshot.areas.length}</strong></span><span><small>СУЩНОСТИ</small><strong>{snapshot.entities.length}</strong></span><span className="hot"><small>В РАБОТЕ</small><strong>{snapshot.summary.activeWork || 0}</strong></span><span className={`connection ${online ? "is-online" : "is-offline"}`}><i />{online ? "онлайн" : "нет связи"}</span></div>
       </header>
 
-      <main className="workspace">
+      <main className={`workspace ${selectedId ? "is-focus-mode" : ""}`}>
         <aside className="navigation-rail">
           <header><span><small>ПРОЕКТ</small><strong>{snapshot.entities.length}</strong></span><button type="button" onClick={() => fitView({ padding: .12, duration: 450 })}>Вся система</button></header>
           <div className="project-tree">
             {groupedAreas.map(({ area, entities }) => <details key={area.id} open>
               <summary onDoubleClick={() => setRename({ kind: "area", id: area.id, value: areaTitle(area) })}><span><strong>{areaTitle(area)}</strong><small>{entities.length} сущностей</small></span></summary>
-              {entities.map((entity) => <button key={entity.id} className={selectedId === entity.id ? "is-active" : ""} type="button" onClick={() => focusEntity(entity.id, true)}><i className={`status-${entity.status}`} />{entityLabel(entity)}</button>)}
+              {entities.map((entity) => <button key={entity.id} className={selectedId === entity.id ? "is-active" : ""} type="button" onClick={() => focusEntity(entity.id)}><i className={`status-${entity.status}`} />{entityLabel(entity)}</button>)}
             </details>)}
           </div>
         </aside>
@@ -323,9 +383,9 @@ export default function App() {
             <header><span><small>{areaTitle(selectedArea)}</small><strong>{entityLabel(selectedEntity)}</strong></span><button onClick={() => setSelectedId(null)}>×</button></header>
             <p className="inspector-purpose">{selectedEntity.purpose || selectedEntity.note || "Назначение пока не описано."}</p>
             <div className="inspector-status"><span className={`status-${selectedEntity.status}`}>{selectedEntity.status}</span>{currentWork.length ? <span className="live">в работе</span> : null}</div>
-            <section><h3>Связи <b>{incoming.length + outgoing.length}</b></h3>{incoming.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.from, true)}><i>←</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.from))}</strong></span></button>)}{outgoing.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.to, true)}><i>→</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.to))}</strong></span></button>)}</section>
+            <section><h3>Связи <b>{incoming.length + outgoing.length}</b></h3>{incoming.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>←</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.from))}</strong></span></button>)}{outgoing.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.to)}><i>→</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.to))}</strong></span></button>)}</section>
             <section><h3>Контекст</h3><dl><div><dt>Вход</dt><dd>{selectedEntity.inputs?.join(", ") || "—"}</dd></div><div><dt>Результат</dt><dd>{selectedEntity.outputs?.join(", ") || "—"}</dd></div><div><dt>Путь</dt><dd>{selectedEntity.path || "—"}</dd></div></dl></section>
-            {currentWork.length ? <section><h3>Сейчас</h3>{currentWork.map((work) => <button key={work.id} onDoubleClick={() => openWork(work.id)}><i className="work-dot" /><span><small>{work.actor}</small><strong>{work.title}</strong></span></button>)}</section> : null}
+            {currentWork.length ? <section><h3>Сейчас</h3>{currentWork.map((work) => <button key={work.id} onClick={() => { setSelectedWorkId(work.id); setSelectedId(null); }} onDoubleClick={() => openWork(work.id)}><i className="work-dot" /><span><small>{work.actor}</small><strong>{work.title}</strong></span></button>)}</section> : null}
             <footer><button onClick={() => setRename({ kind: "entity", id: selectedEntity.id, value: entityLabel(selectedEntity) })}>Переименовать</button><small>F2</small></footer>
           </> : selectedWork ? <>
             <header><span><small>{selectedWork.actor || "agent"}</small><strong>{selectedWork.title}</strong></span><button onClick={() => setSelectedWorkId(null)}>×</button></header>

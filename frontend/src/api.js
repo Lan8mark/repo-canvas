@@ -37,7 +37,7 @@ export const canvasApi = {
   revision: () => api(`/api/revision?t=${Date.now()}`),
   architectStatus: () => api(`/api/architect/status?t=${Date.now()}`),
   updateStatus: (force = false) => api(`/api/update/status?${force ? "refresh=1&" : ""}t=${Date.now()}`),
-  saveLayout: (canvasRevision, items) => api("/api/layout", { method: "POST", body: JSON.stringify({ canvasRevision, items }) }),
+  saveLayout: (canvasRevision, items, layoutVersion) => api("/api/layout", { method: "POST", body: JSON.stringify({ canvasRevision, items, layoutVersion }) }),
   rename: (canvasRevision, kind, id, value) => api("/api/rename", { method: "POST", body: JSON.stringify({ canvasRevision, kind, id, value }) }),
   openWork: (canvasRevision, workId) => api("/api/sessions/open", { method: "POST", body: JSON.stringify({ canvasRevision, workId }) }),
   regenerate: () => api("/api/architect/refresh", { method: "POST", body: "{}" }),

@@ -106,6 +106,7 @@ export function validateEvent(event) {
     requireString(errors, payload.title, "payload.title", { max: 240 });
     optionalString(errors, payload.note, "payload.note", 2000);
     optionalString(errors, payload.ownerTitle, "payload.ownerTitle", 240);
+    optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
     for (const field of ["x", "y", "width", "height", "order"]) {
       if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
     }
@@ -121,6 +122,7 @@ export function validateEvent(event) {
     optionalString(errors, payload.purpose, "payload.purpose", 2000);
     optionalString(errors, payload.note, "payload.note", 2000);
     optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
+    optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
     optionalStringList(errors, payload.inputs, "payload.inputs");
     optionalStringList(errors, payload.outputs, "payload.outputs");
     optionalStringList(errors, payload.dependsOn, "payload.dependsOn");

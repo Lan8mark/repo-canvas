@@ -441,6 +441,7 @@ test("loopback server guards navigation, reports port collision, and stops", asy
 
   const layoutPayload = JSON.stringify({
     canvasRevision: state.json.revision,
+    layoutVersion: "react-flow-elk-v2",
     items: [
       { kind: "area", id: "core", x: 180, y: 220 },
       { kind: "entity", id: "module", x: 260, y: 340 },
@@ -457,6 +458,8 @@ test("loopback server guards navigation, reports port collision, and stops", asy
   const movedState = await request(port, { path: "/api/state", headers: authHeaders });
   assert.deepEqual([movedState.json.areas[0].x, movedState.json.areas[0].y], [180, 220]);
   assert.deepEqual([movedState.json.entities[0].x, movedState.json.entities[0].y], [260, 340]);
+  assert.equal(movedState.json.areas[0].layoutVersion, "react-flow-elk-v2");
+  assert.equal(movedState.json.entities[0].layoutVersion, "react-flow-elk-v2");
   let renameRevision = movedState.json.revision;
   for (const [kind, id, value] of [
     ["area", "core", "Runtime"],
