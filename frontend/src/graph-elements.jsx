@@ -53,6 +53,13 @@ export const EntityNode = memo(function EntityNode({ data, selected }) {
 export const AreaNode = memo(function AreaNode({ data, selected }) {
   return (
     <section className={`area-node ${selected ? "is-selected" : ""} ${data.dimmed ? "is-dimmed" : ""}`}>
+      {[Position.Top, Position.Right, Position.Bottom, Position.Left].flatMap((position) => {
+        const side = position.toLowerCase();
+        return [
+          <Handle key={`source:${side}`} id={`area-source:${side}`} type="source" position={position} className="area-link-handle" />,
+          <Handle key={`target:${side}`} id={`area-target:${side}`} type="target" position={position} className="area-link-handle" />,
+        ];
+      })}
       <header className="area-drag-handle">
         <span><small>ОБЛАСТЬ · {data.count}</small><strong>{data.label}</strong></span>
         <p>{data.area.note}</p>
@@ -95,10 +102,32 @@ export const SemanticEdge = memo(function SemanticEdge(props) {
   );
 });
 
+export const AreaLinkEdge = memo(function AreaLinkEdge(props) {
+  const [path, labelX, labelY] = getBezierPath({ ...props, curvature: 0.2 });
+  const count = props.data?.relations?.length || 0;
+  const title = `${props.data?.sourceArea?.ownerTitle || props.data?.sourceArea?.title} ↔ ${props.data?.targetArea?.ownerTitle || props.data?.targetArea?.title}`;
+  return (
+    <>
+      <BaseEdge {...props} path={path} className={`area-link-edge ${props.data?.dimmed ? "is-dimmed" : ""}`} />
+      <EdgeLabelRenderer>
+        <button
+          type="button"
+          className={`area-link-label nodrag nopan ${props.data?.dimmed ? "is-dimmed" : ""}`}
+          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          title={`${title} · раскрыть точную связь`}
+          onClick={(event) => { event.stopPropagation(); props.data?.onOpen?.(); }}
+        >
+          <span>↗</span>{count} {count === 1 ? "связь" : count < 5 ? "связи" : "связей"}
+        </button>
+      </EdgeLabelRenderer>
+    </>
+  );
+});
+
 export const WorkEdge = memo(function WorkEdge(props) {
   const [path] = getBezierPath(props);
   return <BaseEdge {...props} path={path} className={`work-edge ${props.data?.dimmed ? "is-dimmed" : ""}`} />;
 });
 
 export const nodeTypes = { entity: EntityNode, area: AreaNode, work: WorkNode };
-export const edgeTypes = { semantic: SemanticEdge, work: WorkEdge };
+export const edgeTypes = { semantic: SemanticEdge, areaLink: AreaLinkEdge, work: WorkEdge };

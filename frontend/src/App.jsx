@@ -29,12 +29,14 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedWorkId, setSelectedWorkId] = useState(null);
+  const [selectedBridge, setSelectedBridge] = useState(null);
   const [direction, setDirection] = useState("all");
   const [online, setOnline] = useState(true);
   const [message, setMessage] = useState(null);
   const [rename, setRename] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [update, setUpdate] = useState(null);
+  const [layoutUnlocked, setLayoutUnlocked] = useState(false);
   const [initialFit, setInitialFit] = useState(false);
   const snapshotRef = useRef(null);
   const busyRef = useRef(false);
@@ -92,7 +94,7 @@ export default function App() {
 
   useEffect(() => {
     const key = (event) => {
-      if (event.key === "Escape") { setSelectedId(null); setSelectedWorkId(null); }
+      if (event.key === "Escape") { setSelectedId(null); setSelectedWorkId(null); setSelectedBridge(null); }
       if (event.key === "F2" && selectedId && snapshot) {
         event.preventDefault();
         const entity = snapshot.entities.find((item) => item.id === selectedId);
@@ -112,21 +114,46 @@ export default function App() {
 
   const displayGraph = useMemo(() => {
     if (!snapshot) return { nodes, edges };
-    const visible = neighborSet(snapshot, selectedId, direction);
-    const hasFocus = Boolean(selectedId);
-    const focusRelationItems = (snapshot.relations || [])
-      .filter((relation) => {
-        if (!selectedId) return false;
-        if (direction === "in") return relation.to === selectedId;
-        if (direction === "out") return relation.from === selectedId;
-        return relation.from === selectedId || relation.to === selectedId;
-      });
+    const visible = selectedBridge
+      ? new Set(selectedBridge.relations.flatMap((relation) => [relation.from, relation.to]))
+      : neighborSet(snapshot, selectedId, direction);
+    const hasFocus = Boolean(selectedId || selectedBridge);
+    const focusRelationItems = selectedBridge
+      ? selectedBridge.relations
+      : (snapshot.relations || []).filter((relation) => {
+          if (!selectedId) return false;
+          if (direction === "in") return relation.to === selectedId;
+          if (direction === "out") return relation.from === selectedId;
+          return relation.from === selectedId || relation.to === selectedId;
+        });
     const focusedRelations = new Set(focusRelationItems.map((relation) => `relation:${relation.id}`));
     const focusedRelationIds = new Set(focusRelationItems.map((relation) => relation.id));
     const activeIds = new Set(snapshot.activeEntityIds || []);
     const focusPositions = new Map();
 
-    if (selectedId) {
+    if (selectedBridge) {
+      const nodeById = new Map(nodes.map((node) => [node.id, node]));
+      const entityArea = new Map(snapshot.entities.map((entity) => [entity.id, entity.areaId]));
+      const firstRelation = selectedBridge.relations[0];
+      const leftAreaId = entityArea.get(firstRelation.from);
+      const rightAreaId = entityArea.get(firstRelation.to);
+      const leftIds = [...new Set(selectedBridge.relations.flatMap((relation) => [relation.from, relation.to]).filter((id) => entityArea.get(id) === leftAreaId))];
+      const rightIds = [...new Set(selectedBridge.relations.flatMap((relation) => [relation.from, relation.to]).filter((id) => entityArea.get(id) === rightAreaId))];
+      const leftAreaNode = nodeById.get(`area:${leftAreaId}`);
+      const rightAreaNode = nodeById.get(`area:${rightAreaId}`);
+      const anchor = {
+        x: ((leftAreaNode?.position.x || 0) + (rightAreaNode?.position.x || 0)) / 2,
+        y: ((leftAreaNode?.position.y || 0) + (rightAreaNode?.position.y || 0)) / 2,
+      };
+      leftIds.forEach((id, index) => focusPositions.set(id, {
+        x: anchor.x - 346,
+        y: anchor.y + (index - (leftIds.length - 1) / 2) * 190,
+      }));
+      rightIds.forEach((id, index) => focusPositions.set(id, {
+        x: anchor.x + 346,
+        y: anchor.y + (index - (rightIds.length - 1) / 2) * 190,
+      }));
+    } else if (selectedId) {
       const nodeById = new Map(nodes.map((node) => [node.id, node]));
       const selectedNode = nodeById.get(selectedId);
       const parentNode = selectedNode?.parentId ? nodeById.get(selectedNode.parentId) : null;
@@ -175,7 +202,7 @@ export default function App() {
             position: focusPosition,
             draggable: false,
             zIndex: 8,
-          } : hasFocus ? { draggable: false } : {}),
+          } : { draggable: !hasFocus && layoutUnlocked }),
           data: {
             ...node.data,
             focused: entityId === selectedId,
@@ -197,44 +224,61 @@ export default function App() {
             onRename: edge.data?.relation
               ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: edge.label })
               : undefined,
+            onOpen: edge.type === "areaLink" && edge.data?.relations?.length
+              ? () => {
+                setSelectedWorkId(null);
+                setSelectedId(null);
+                setSelectedBridge({
+                  id: edge.id,
+                  relations: edge.data.relations,
+                  sourceArea: edge.data.sourceArea,
+                  targetArea: edge.data.targetArea,
+                });
+              }
+              : undefined,
           },
         };
       }),
     };
-  }, [snapshot, nodes, edges, selectedId, direction]);
+  }, [snapshot, nodes, edges, selectedId, selectedBridge, direction, layoutUnlocked]);
 
   const onNodeClick = useCallback((_, node) => {
-    if (node.type === "entity") { setSelectedId(node.id); setSelectedWorkId(null); }
-    if (node.type === "work") { setSelectedWorkId(node.id.slice(5)); setSelectedId(null); }
+    if (node.type === "entity") { setSelectedId(node.id); setSelectedWorkId(null); setSelectedBridge(null); }
+    if (node.type === "work") { setSelectedWorkId(node.id.slice(5)); setSelectedId(null); setSelectedBridge(null); }
   }, []);
 
   const focusEntity = useCallback((id) => {
     setSelectedId(id);
     setSelectedWorkId(null);
+    setSelectedBridge(null);
   }, []);
 
   useEffect(() => {
-    if (!selectedId || !snapshot) return;
+    if ((!selectedId && !selectedBridge) || !snapshot) return;
     const timer = window.setTimeout(() => {
-      const visible = neighborSet(snapshot, selectedId, direction);
+      const visible = selectedBridge
+        ? new Set(selectedBridge.relations.flatMap((relation) => [relation.from, relation.to]))
+        : neighborSet(snapshot, selectedId, direction);
       const focusNodes = getNodes().filter((node) => node.type === "entity" && visible.has(node.id));
       if (focusNodes.length) fitView({ nodes: focusNodes, padding: .14, maxZoom: .82, duration: 500 });
     }, 280);
     return () => window.clearTimeout(timer);
-  }, [selectedId, direction, snapshot, getNodes, fitView]);
+  }, [selectedId, selectedBridge, direction, snapshot, getNodes, fitView]);
 
   useEffect(() => {
+    const focused = Boolean(selectedId || selectedBridge);
     const previous = previousSelectedRef.current;
-    previousSelectedRef.current = selectedId;
-    if (!previous || selectedId) return;
+    previousSelectedRef.current = focused;
+    if (!previous || focused) return;
     const timer = window.setTimeout(() => fitView({ padding: .12, duration: 500 }), 280);
     return () => window.clearTimeout(timer);
-  }, [selectedId, fitView]);
+  }, [selectedId, selectedBridge, fitView]);
 
   const onNodeDoubleClick = useCallback((_, node) => {
     if (!snapshotRef.current) return;
     if (node.type === "entity") {
       setSelectedId(node.id);
+      setSelectedBridge(null);
       const area = node.parentId ? getNodes().find((item) => item.id === node.parentId) : null;
       const x = (area?.position.x || 0) + node.position.x + (node.measured?.width || 264) / 2;
       const y = (area?.position.y || 0) + node.position.y + (node.measured?.height || 140) / 2;
@@ -244,7 +288,7 @@ export default function App() {
   }, [getNodes, setCenter]);
 
   const saveNodePosition = useCallback(async (_, node) => {
-    if (!snapshotRef.current || node.type === "work") return;
+    if (!layoutUnlocked || !snapshotRef.current || node.type === "work") return;
     busyRef.current = true;
     try {
       const current = getNodes();
@@ -263,7 +307,7 @@ export default function App() {
       await refresh(true);
     } catch (error) { notify(error.message, true); await refresh(true); }
     finally { busyRef.current = false; }
-  }, [getNodes, notify, refresh]);
+  }, [layoutUnlocked, getNodes, notify, refresh]);
 
   async function openWork(workId) {
     if (!snapshotRef.current) return;
@@ -327,7 +371,7 @@ export default function App() {
         <div className="telemetry"><span><small>ОБЛАСТИ</small><strong>{snapshot.areas.length}</strong></span><span><small>СУЩНОСТИ</small><strong>{snapshot.entities.length}</strong></span><span className="hot"><small>В РАБОТЕ</small><strong>{snapshot.summary.activeWork || 0}</strong></span><span className={`connection ${online ? "is-online" : "is-offline"}`}><i />{online ? "онлайн" : "нет связи"}</span></div>
       </header>
 
-      <main className={`workspace ${selectedId ? "is-focus-mode" : ""}`}>
+      <main className={`workspace ${selectedId || selectedBridge ? "is-focus-mode" : ""} ${layoutUnlocked ? "is-layout-unlocked" : ""}`}>
         <aside className="navigation-rail">
           <header><span><small>ПРОЕКТ</small><strong>{snapshot.entities.length}</strong></span><button type="button" onClick={() => fitView({ padding: .12, duration: 450 })}>Вся система</button></header>
           <div className="project-tree">
@@ -340,17 +384,28 @@ export default function App() {
 
         <section className="canvas-panel">
           <header className="canvas-toolbar">
-            <span><small>АРХИТЕКТУРА И ТЕКУЩАЯ РАБОТА</small><h1>{selectedEntity ? entityLabel(selectedEntity) : "Весь проект"}</h1></span>
+            <span><small>АРХИТЕКТУРА И ТЕКУЩАЯ РАБОТА</small><h1>{selectedEntity ? entityLabel(selectedEntity) : selectedBridge ? `${areaTitle(selectedBridge.sourceArea)} ↔ ${areaTitle(selectedBridge.targetArea)}` : "Весь проект"}</h1></span>
             <nav>
               <button type="button" title="Обновить данные" onClick={() => refresh(true)}><Icon>↻</Icon></button>
               <button type="button" className="regenerate" disabled={regenerating} onClick={regenerate}>{regenerating ? "Карта перестраивается…" : "Повторная генерация"}</button>
+              <button
+                type="button"
+                className={`layout-lock ${layoutUnlocked ? "is-unlocked" : ""}`}
+                aria-pressed={layoutUnlocked}
+                title={layoutUnlocked ? "Заблокировать позиции" : "Разрешить перемещение нод и областей"}
+                onClick={() => {
+                  const next = !layoutUnlocked;
+                  setLayoutUnlocked(next);
+                  notify(next ? "Перемещение включено" : "Позиции заблокированы");
+                }}
+              >{layoutUnlocked ? "Открыто · 🔓" : "Позиции · 🔒"}</button>
               <button type="button" onClick={() => zoomOut()} aria-label="Уменьшить">−</button>
               <button type="button" onClick={() => fitView({ padding: .12, duration: 450 })}>Показать всё</button>
               <button type="button" onClick={() => zoomIn()} aria-label="Увеличить">+</button>
             </nav>
           </header>
           <div className="canvas-wrap">
-            {selectedId ? <div className="focus-toolbar"><span>Фокус</span>{[["in", "Входящие"], ["all", "Все"], ["out", "Исходящие"]].map(([value, label]) => <button key={value} className={direction === value ? "is-active" : ""} onClick={() => setDirection(value)}>{label}</button>)}<button onClick={() => setSelectedId(null)}>Сбросить ×</button></div> : null}
+            {selectedId ? <div className="focus-toolbar"><span>Фокус</span>{[["in", "Входящие"], ["all", "Все"], ["out", "Исходящие"]].map(([value, label]) => <button key={value} className={direction === value ? "is-active" : ""} onClick={() => setDirection(value)}>{label}</button>)}<button onClick={() => setSelectedId(null)}>Сбросить ×</button></div> : selectedBridge ? <div className="focus-toolbar bridge-toolbar"><span>Мост</span><b>{selectedBridge.relations.length} точных связей</b><button onClick={() => setSelectedBridge(null)}>Сбросить ×</button></div> : null}
             <ReactFlow
               nodes={displayGraph.nodes}
               edges={displayGraph.edges}
@@ -360,39 +415,50 @@ export default function App() {
               onEdgesChange={onEdgesChange}
               onNodeClick={onNodeClick}
               onNodeDoubleClick={onNodeDoubleClick}
-              onNodeDragStop={saveNodePosition}
-              onPaneClick={() => { setSelectedId(null); setSelectedWorkId(null); }}
+              onNodeDragStop={layoutUnlocked ? saveNodePosition : undefined}
+              onPaneClick={() => { setSelectedId(null); setSelectedWorkId(null); setSelectedBridge(null); }}
               minZoom={.035}
               maxZoom={1.45}
               selectionOnDrag
               panOnDrag
               elevateNodesOnSelect
               nodesConnectable={false}
+              nodesDraggable={layoutUnlocked && !selectedId && !selectedBridge}
               proOptions={{ hideAttribution: true }}
               fitView
             >
-              <Background gap={28} size={1} color="#ded7cf" />
+              <Background gap={28} size={1} color="#b9ada3" />
               <Controls showInteractive={false} />
-              <MiniMap pannable zoomable nodeStrokeWidth={2} />
+              <MiniMap pannable zoomable nodeStrokeWidth={2} maskColor="rgba(190, 180, 170, .58)" />
             </ReactFlow>
           </div>
         </section>
 
-        <aside className={`inspector ${selectedEntity || selectedWork ? "is-open" : ""}`}>
+        <aside className={`inspector ${selectedEntity || selectedWork || selectedBridge ? "is-open" : ""}`}>
           {selectedEntity ? <>
             <header><span><small>{areaTitle(selectedArea)}</small><strong>{entityLabel(selectedEntity)}</strong></span><button onClick={() => setSelectedId(null)}>×</button></header>
             <p className="inspector-purpose">{selectedEntity.purpose || selectedEntity.note || "Назначение пока не описано."}</p>
             <div className="inspector-status"><span className={`status-${selectedEntity.status}`}>{selectedEntity.status}</span>{currentWork.length ? <span className="live">в работе</span> : null}</div>
             <section><h3>Связи <b>{incoming.length + outgoing.length}</b></h3>{incoming.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>←</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.from))}</strong></span></button>)}{outgoing.map((relation) => <button key={relation.id} onClick={() => focusEntity(relation.to)}><i>→</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(snapshot.entities.find((item) => item.id === relation.to))}</strong></span></button>)}</section>
             <section><h3>Контекст</h3><dl><div><dt>Вход</dt><dd>{selectedEntity.inputs?.join(", ") || "—"}</dd></div><div><dt>Результат</dt><dd>{selectedEntity.outputs?.join(", ") || "—"}</dd></div><div><dt>Путь</dt><dd>{selectedEntity.path || "—"}</dd></div></dl></section>
-            {currentWork.length ? <section><h3>Сейчас</h3>{currentWork.map((work) => <button key={work.id} onClick={() => { setSelectedWorkId(work.id); setSelectedId(null); }} onDoubleClick={() => openWork(work.id)}><i className="work-dot" /><span><small>{work.actor}</small><strong>{work.title}</strong></span></button>)}</section> : null}
+            {currentWork.length ? <section><h3>Сейчас</h3>{currentWork.map((work) => <button key={work.id} onClick={() => { setSelectedWorkId(work.id); setSelectedId(null); setSelectedBridge(null); }} onDoubleClick={() => openWork(work.id)}><i className="work-dot" /><span><small>{work.actor}</small><strong>{work.title}</strong></span></button>)}</section> : null}
             <footer><button onClick={() => setRename({ kind: "entity", id: selectedEntity.id, value: entityLabel(selectedEntity) })}>Переименовать</button><small>F2</small></footer>
           </> : selectedWork ? <>
             <header><span><small>{selectedWork.actor || "agent"}</small><strong>{selectedWork.title}</strong></span><button onClick={() => setSelectedWorkId(null)}>×</button></header>
             <p className="inspector-purpose">{selectedWork.note || "Рабочая сессия агента"}</p>
             <div className="inspector-status"><span className="live">{selectedWork.status}</span></div>
-            <section><h3>Затрагивает</h3>{selectedWork.targets?.map((id) => <button key={id} onClick={() => { setSelectedId(id); setSelectedWorkId(null); }}><i>→</i><strong>{entityLabel(snapshot.entities.find((item) => item.id === id))}</strong></button>)}</section>
+            <section><h3>Затрагивает</h3>{selectedWork.targets?.map((id) => <button key={id} onClick={() => { setSelectedId(id); setSelectedWorkId(null); setSelectedBridge(null); }}><i>→</i><strong>{entityLabel(snapshot.entities.find((item) => item.id === id))}</strong></button>)}</section>
             <footer><button disabled={!selectedWork.session} onClick={() => openWork(selectedWork.id)}>Открыть сессию ↗</button></footer>
+          </> : selectedBridge ? <>
+            <header><span><small>МЕЖДУ ОБЛАСТЯМИ</small><strong>{areaTitle(selectedBridge.sourceArea)} ↔ {areaTitle(selectedBridge.targetArea)}</strong></span><button onClick={() => setSelectedBridge(null)}>×</button></header>
+            <p className="inspector-purpose">Агрегированный мост убирает длинные рёбра из общего обзора. Здесь раскрыты все его точные связи.</p>
+            <div className="inspector-status"><span>{selectedBridge.relations.length} связей</span></div>
+            <section><h3>Точные связи <b>{selectedBridge.relations.length}</b></h3>{selectedBridge.relations.map((relation) => {
+              const from = snapshot.entities.find((entity) => entity.id === relation.from);
+              const to = snapshot.entities.find((entity) => entity.id === relation.to);
+              return <button key={relation.id} onClick={() => focusEntity(relation.from)}><i>↗</i><span><small>{relation.ownerLabel || relation.label}</small><strong>{entityLabel(from)} → {entityLabel(to)}</strong></span></button>;
+            })}</section>
+            <footer><button onClick={() => setSelectedBridge(null)}>Вернуться к обзору</button></footer>
           </> : <div className="inspector-empty"><span>◎</span><strong>Выберите ноду</strong><p>Здесь появятся назначение, связи и текущая работа.</p></div>}
         </aside>
       </main>

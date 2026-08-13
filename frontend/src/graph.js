@@ -95,6 +95,62 @@ function packAreas(areas, areaLayouts, { margin = 60, gap = 110, aspect = 1.55 }
   return positions;
 }
 
+function aggregateAreaLinks(areaNodes, entities, relations) {
+  const entityArea = new Map(entities.map((entity) => [entity.id, entity.areaId]));
+  const nodeByArea = new Map(areaNodes.map((node) => [node.id.slice(5), node]));
+  const groups = new Map();
+
+  for (const relation of relations) {
+    const fromArea = entityArea.get(relation.from);
+    const toArea = entityArea.get(relation.to);
+    if (!fromArea || !toArea || fromArea === toArea) continue;
+    const [first, second] = [fromArea, toArea].sort();
+    const key = `${first}:${second}`;
+    const group = groups.get(key) || { first, second, relations: [] };
+    group.relations.push(relation);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].map((group) => {
+    const sourceNode = nodeByArea.get(group.first);
+    const targetNode = nodeByArea.get(group.second);
+    const sourceCenter = {
+      x: sourceNode.position.x + Number(sourceNode.style.width) / 2,
+      y: sourceNode.position.y + Number(sourceNode.style.height) / 2,
+    };
+    const targetCenter = {
+      x: targetNode.position.x + Number(targetNode.style.width) / 2,
+      y: targetNode.position.y + Number(targetNode.style.height) / 2,
+    };
+    const dx = targetCenter.x - sourceCenter.x;
+    const dy = targetCenter.y - sourceCenter.y;
+    let sourceSide;
+    let targetSide;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      sourceSide = dx >= 0 ? "right" : "left";
+      targetSide = dx >= 0 ? "left" : "right";
+    } else {
+      sourceSide = dy >= 0 ? "bottom" : "top";
+      targetSide = dy >= 0 ? "top" : "bottom";
+    }
+    return {
+      id: `area-link:${group.first}:${group.second}`,
+      type: "areaLink",
+      source: `area:${group.first}`,
+      target: `area:${group.second}`,
+      sourceHandle: `area-source:${sourceSide}`,
+      targetHandle: `area-target:${targetSide}`,
+      data: {
+        relations: group.relations,
+        sourceArea: sourceNode.data.area,
+        targetArea: targetNode.data.area,
+      },
+      selectable: false,
+      zIndex: 0,
+    };
+  });
+}
+
 export async function buildGraph(snapshot) {
   const areas = snapshot.areas || [];
   const entities = snapshot.entities || [];
@@ -173,7 +229,9 @@ export async function buildGraph(snapshot) {
     zIndex: 1,
   }));
 
-  return { nodes: [...areaNodes, ...entityNodes], edges: relationEdges };
+  const areaLinks = aggregateAreaLinks(areaNodes, entities, relations);
+
+  return { nodes: [...areaNodes, ...entityNodes], edges: [...areaLinks, ...relationEdges] };
 }
 
 export function neighborSet(snapshot, selectedId, direction = "all") {
