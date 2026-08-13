@@ -9,7 +9,7 @@ const elements = {
   closePassport: $("#closePassport"), nowCount: $("#nowCount"), nowList: $("#nowList"),
   activityList: $("#activityList"), lastSync: $("#lastSync"), canvasTitle: $("#canvasTitle"),
   viewport: $("#viewport"), world: $("#world"), areaLayer: $("#areaLayer"), edgeLayer: $("#edgeLayer"),
-  relationLabelLayer: $("#relationLabelLayer"), entityLayer: $("#entityLayer"), workLayer: $("#workLayer"), emptyState: $("#emptyState"), toast: $("#toast"),
+  relationLabelLayer: $("#relationLabelLayer"), entityLayer: $("#entityLayer"), workLayer: $("#workLayer"), emptyState: $("#emptyState"), accessState: $("#accessState"), retryAccess: $("#retryAccess"), toast: $("#toast"),
   legend: $("#canvasLegend"), legendToggle: $("#legendToggle"), legendClose: $("#legendClose"),
   renameDialog: $("#renameDialog"), renameForm: $("#renameForm"), renameTitle: $("#renameTitle"),
   renameInput: $("#renameInput"), renameCancel: $("#renameCancel"),
@@ -42,6 +42,7 @@ let layoutSaving = false;
 let renameSaving = false;
 let renameTarget = null;
 let suppressEntityClickUntil = 0;
+let accessBlocked = false;
 const collapsedAreas = new Set();
 const API_TOKEN_STORAGE_KEY = "repo-canvas.api-token";
 
@@ -49,14 +50,14 @@ function resolveApiToken() {
   const parameters = new URLSearchParams(window.location.hash.slice(1));
   const token = parameters.get("token");
   if (token) {
-    sessionStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(API_TOKEN_STORAGE_KEY, token);
     history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     return token;
   }
-  return sessionStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
+  return localStorage.getItem(API_TOKEN_STORAGE_KEY) || "";
 }
 
-const apiToken = resolveApiToken();
+let apiToken = resolveApiToken();
 
 function apiFetch(input, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -621,6 +622,7 @@ async function openWork(item) {
 }
 
 async function poll(force = false) {
+  if (accessBlocked && !force) return;
   if (layoutDrag || layoutSaving || renameSaving) return;
   try {
     if (!force && snapshot) {
@@ -629,6 +631,8 @@ async function poll(force = false) {
       const revision = await revisionResponse.json();
       if (revision.revision === snapshot.revision) {
         elements.connection.className = "connection is-online"; elements.connection.querySelector("b").textContent = "онлайн";
+        accessBlocked = false;
+        elements.accessState.hidden = true;
         elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
         return;
       }
@@ -637,9 +641,17 @@ async function poll(force = false) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const next = await response.json();
     elements.connection.className = "connection is-online"; elements.connection.querySelector("b").textContent = "онлайн";
+    accessBlocked = false;
+    elements.accessState.hidden = true;
     if (force || !snapshot || next.revision !== snapshot.revision) { snapshot = next; render(); if (!fitDone && snapshot.semantic) { fitDone = true; requestAnimationFrame(fitView); } }
     else elements.lastSync.textContent = relativeTime(snapshot.updatedAt);
-  } catch { elements.connection.className = "connection is-offline"; elements.connection.querySelector("b").textContent = "нет связи"; }
+  } catch (error) {
+    elements.connection.className = "connection is-offline"; elements.connection.querySelector("b").textContent = "нет связи";
+    const unauthorized = error?.message === "HTTP 401";
+    accessBlocked = unauthorized;
+    elements.accessState.hidden = !unauthorized;
+    if (unauthorized) elements.emptyState.hidden = true;
+  }
 }
 
 elements.allProject.addEventListener("click", () => selectArea("all"));
@@ -652,6 +664,13 @@ elements.legendClose.addEventListener("click", () => setLegendOpen(false));
 elements.renameForm.addEventListener("submit", saveRename);
 elements.renameCancel.addEventListener("click", () => { renameTarget = null; elements.renameDialog.close(); });
 elements.renameDialog.addEventListener("cancel", () => { renameTarget = null; });
+elements.retryAccess.addEventListener("click", () => { apiToken = localStorage.getItem(API_TOKEN_STORAGE_KEY) || ""; accessBlocked = false; poll(true); });
+window.addEventListener("storage", (event) => {
+  if (event.key !== API_TOKEN_STORAGE_KEY || !event.newValue) return;
+  apiToken = event.newValue;
+  accessBlocked = false;
+  poll(true);
+});
 elements.viewport.addEventListener("wheel", (event) => { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY > 0 ? .9 : 1.1); }, { passive: false });
 elements.viewport.addEventListener("pointerdown", (event) => { if (event.button !== 0 || event.target.closest("button")) return; window.getSelection()?.removeAllRanges(); pan = { x: event.clientX, y: event.clientY, tx: transform.x, ty: transform.y }; elements.viewport.setPointerCapture(event.pointerId); elements.viewport.classList.add("is-panning"); });
 elements.viewport.addEventListener("pointermove", (event) => { if (!pan) return; transform.x = pan.tx + event.clientX - pan.x; transform.y = pan.ty + event.clientY - pan.y; updateTransform(); });

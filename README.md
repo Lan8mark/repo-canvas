@@ -16,12 +16,12 @@ Install this project-visualization tool in the current repository, build the ini
 The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.3
+npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.4
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
 
-Open the printed loopback URL in a browser. Keep that foreground terminal running while you use the Canvas.
+The server opens the protected loopback URL in your default browser. Keep that foreground terminal running while you use the Canvas.
 
 ## What you see
 
@@ -64,16 +64,16 @@ Observer reads public user messages, agent messages and tool-call metadata. Clau
 
 The npm installation adds Repo Canvas as an exact development dependency. `setup` adds three package scripts, the ignored `.repo-canvas/` runtime directory and two `.gitignore` entries. It does not add coding-agent instructions or hooks.
 
-The server binds to loopback only and prints a fresh tokenized Canvas URL on every start. Use that exact URL; the token stays in the current browser tab and protects all Canvas API reads and actions from unrelated local processes. Semantic events and Observer cursors stay in the repository's ignored `.repo-canvas/` directory. Model calls use existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters only parse their local journals; they do not copy credentials or call those providers. No API key is copied into the project.
+The server binds to loopback only, opens a fresh tokenized Canvas URL on every start and shares that authorization with other tabs on the same local address. Existing tabs reconnect when a restarted server opens its new protected URL. Use `repo-canvas start --no-open` only when automatic browser opening is unwanted. The token protects all Canvas API reads and actions from unrelated local processes. Semantic events and Observer cursors stay in the repository's ignored `.repo-canvas/` directory. Model calls use existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters only parse their local journals; they do not copy credentials or call those providers. No API key is copied into the project.
 
 ## Offline installation
 
-Download `repo-canvas-0.8.3-kit.zip` from the [latest release](https://github.com/m0ast-git/repo-canvas/releases/latest). Copy `repo-canvas-0.8.3.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+Download `repo-canvas-0.8.4-kit.zip` from the [latest release](https://github.com/m0ast-git/repo-canvas/releases/latest). Copy `repo-canvas-0.8.4.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
 
 Manual commands:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.3.tgz
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.4.tgz
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```

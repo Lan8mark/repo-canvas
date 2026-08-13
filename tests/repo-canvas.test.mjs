@@ -362,7 +362,7 @@ test("loopback server guards navigation, reports port collision, and stops", asy
     env: { CODEX_THREAD_ID: "", CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "" },
   }).status, 0);
   const port = await freePort();
-  const server = spawn(process.execPath, [cli, "start", "--root", root, "--port", String(port)], {
+  const server = spawn(process.execPath, [cli, "start", "--no-open", "--root", root, "--port", String(port)], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
   });

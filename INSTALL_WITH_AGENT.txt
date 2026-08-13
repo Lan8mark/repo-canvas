@@ -16,11 +16,11 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
    Если владелец дал ссылку на GitHub:
 
-   npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.3
+   npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.4
 
-   Если в корне проекта лежит `repo-canvas-0.8.3.tgz`:
+   Если в корне проекта лежит `repo-canvas-0.8.4.tgz`:
 
-   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.3.tgz
+   npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.4.tgz
 
    Затем выполни:
 
@@ -38,7 +38,7 @@ REPO CANVAS — УСТАНОВКА В СУЩЕСТВУЮЩИЙ ПРОЕКТ
 
    npm run repo-canvas -- start --port <port>
 
-5. Дождись строки `Repo Canvas listening at ...`, открой точную напечатанную ссылку вместе с `#token=...` и проверь фактическое отображение. Токен новый при каждом запуске, остаётся только в текущей вкладке и не должен удаляться из ссылки до первого открытия:
+5. Дождись строки `Repo Canvas listening at ...`: сервер сам откроет защищённую карту в браузере. Проверь фактическое отображение; остальные вкладки на этом локальном адресе подключатся автоматически. Если браузер не открылся, открой точную напечатанную ссылку вместе с `#token=...`:
    - области, сущности и подписи связей читаемы;
    - связи не перекрывают карточки;
    - страница не имеет горизонтального скролла;

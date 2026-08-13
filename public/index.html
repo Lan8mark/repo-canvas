@@ -58,6 +58,13 @@
           <div id="workLayer" class="work-layer"></div>
         </div>
         <p id="emptyState" class="empty-state">Смысловая карта проекта пока не построена.</p>
+        <section id="accessState" class="access-state" hidden>
+          <span class="access-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <small>НУЖНА СВЯЗЬ С ЛОКАЛЬНЫМ CANVAS</small>
+          <h2>Эта вкладка потеряла доступ</h2>
+          <p>Сервер откроет рабочую вкладку сам. Если она уже открылась, эта страница подключится автоматически.</p>
+          <button id="retryAccess" type="button">Проверить снова</button>
+        </section>
         <span class="canvas-hint">тяните фон · колесо меняет масштаб · двойной клик по названию переименовывает</span>
         <aside id="canvasLegend" class="canvas-legend" aria-label="Легенда карты" hidden>
           <header><span><small>ЛЕГЕНДА</small><strong>Как читать карту</strong></span><button id="legendClose" type="button" aria-label="Закрыть легенду">×</button></header>

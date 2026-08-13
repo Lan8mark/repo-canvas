@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -15,6 +16,24 @@ const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const runtimeConfig = readRuntimeConfig();
 const apiToken = crypto.randomBytes(32).toString("base64url");
 let observerService = null;
+
+function openCanvasInBrowser(url) {
+  if (process.env.REPO_CANVAS_AUTO_OPEN === "0" || process.env.NODE_ENV === "test") return;
+  const launchers = {
+    win32: ["rundll32.exe", ["url.dll,FileProtocolHandler", url]],
+    darwin: ["open", [url]],
+    linux: ["xdg-open", [url]],
+  };
+  const launcher = launchers[process.platform];
+  if (!launcher) return;
+  try {
+    const child = spawn(launcher[0], launcher[1], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", (error) => console.warn(`Repo Canvas could not open the browser automatically: ${error.message}`));
+    child.unref();
+  } catch (error) {
+    console.warn(`Repo Canvas could not open the browser automatically: ${error.message}`);
+  }
+}
 
 if (!loopbackHosts.has(host)) throw new Error(`Repo Canvas only binds to loopback; received CANVAS_HOST=${host}`);
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`Invalid CANVAS_PORT: ${process.env.CANVAS_PORT}`);
@@ -308,8 +327,10 @@ server.once("error", (error) => {
 });
 
 server.listen(port, host, () => {
+  const canvasUrl = `http://${host}:${port}/#token=${apiToken}`;
   console.log(`Repo Canvas root: ${projectRoot}`);
-  console.log(`Repo Canvas listening at http://${host}:${port}/#token=${apiToken}`);
+  console.log(`Repo Canvas listening at ${canvasUrl}`);
+  openCanvasInBrowser(canvasUrl);
   if (runtimeConfig.enabled && getSnapshot().semantic) {
     observerService = startObserver({ config: runtimeConfig });
     console.log(`Repo Canvas observer: ${observerService.observer.adapters.map((item) => item.id).join(", ")} sessions for ${runtimeConfig.repoRoot}`);

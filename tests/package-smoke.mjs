@@ -153,7 +153,7 @@ try {
   assert.ok(!fs.existsSync(path.join(root, "node_modules", "repo-canvas", ".repo-canvas")));
 
   const port = await freePort();
-  const server = spawn(process.execPath, [installedCli, "start", "--port", String(port)], {
+  const server = spawn(process.execPath, [installedCli, "start", "--no-open", "--port", String(port)], {
     cwd: nested,
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -98,6 +98,7 @@ Commands:
 Global options:
   --root <path>  Explicit repository root
   --port <port>  Server port for start (default 4173)
+  --no-open      Do not open the Canvas in the default browser
 
 Examples:
   repo-canvas init
@@ -125,6 +126,7 @@ if (args.root === true) {
     } else if (command === "start" || command === "serve") {
       if (args.port !== undefined) process.env.CANVAS_PORT = String(args.port);
       if (args.host !== undefined) process.env.CANVAS_HOST = String(args.host);
+      if (args["no-open"]) process.env.REPO_CANVAS_AUTO_OPEN = "0";
       await import("../../server.mjs");
     } else if (command === "init") {
       const { runInit } = await import("./canvas-init.mjs");
