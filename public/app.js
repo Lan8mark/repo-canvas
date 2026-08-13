@@ -334,7 +334,7 @@ function showPassport(entity) {
   const facts = [
     ["Вход", (entity.inputs || []).join(", ") || "—"], ["Результат", (entity.outputs || []).join(", ") || "—"],
     ["Зависит от", (entity.dependsOn || []).join(", ") || "—"], ["Путь", entity.path || "—"],
-    ["Сейчас", works.map((item) => item.title).join(", ") || "нет активных задач"],
+    ["Сейчас", works.map((item) => item.title).join(", ") || "нет активной работы"],
   ];
   elements.passportFacts.innerHTML = facts.map(([key, value]) => `<div><dt>${key}</dt><dd>${escapeHtml(value)}</dd></div>`).join("");
 }
@@ -468,7 +468,7 @@ async function endLayoutDrag(event) {
 }
 
 async function openWork(item) {
-  if (!item?.session) return showToast("Агент не привязал рабочую сессию к этой задаче.", true);
+  if (!item?.session) return showToast("К этой работе не привязана сессия агента.", true);
   try {
     const response = await fetch("/api/sessions/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workId: item.id, canvasRevision: snapshot.revision }) });
     const result = await response.json();

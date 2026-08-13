@@ -143,7 +143,7 @@ export function runInit({ upgrade = false, installSpec = null } = {}) {
   }
 
   console.log(changed.length ? `Updated: ${changed.join(", ")}` : "Repo Canvas is already initialized; no file changes.");
-  console.log("One-command setup: npm run repo-canvas -- setup");
-  console.log("Normal development agents stay untouched; the private observer maintains Canvas out of band.");
+  console.log("Next: npm run repo-canvas -- setup");
+  console.log("Setup builds the semantic map and enables repository-scoped observation.");
   return { root: projectRoot, changed, version: packageInfo.version };
 }

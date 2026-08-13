@@ -1,75 +1,89 @@
-# Repo Canvas 0.8
+# Repo Canvas
 
-A local semantic map for large repositories. It shows permanent project structure and overlays live Codex, Claude Code and Kimi Code work as small session-linked satellites.
+**Understand a large repository at a glance and see where coding agents are working right now.**
 
-## What changed in 0.8
+Repo Canvas builds a local, Miro-like map of an existing project. Permanent areas, modules and relations show how the system fits together. Live work cards show what Codex, Claude Code and Kimi Code sessions are changing. Double-click a work card to return to that session.
 
-Repo Canvas now maintains itself outside the coding agent's context:
+## Install with your coding agent
 
-- a subscription-backed **Architect** builds the first semantic map with `gpt-5.6-sol` at medium reasoning;
-- a private **Observer** watches public Codex, Claude Code and Kimi Code session events belonging to this repository;
-- a provisional work card appears as soon as any supported agent turn starts;
-- `gpt-5.4-mini` classifies the work from small session deltas and attaches it to semantic entities;
-- completion updates affected passports and can remove a concept only when the session establishes that the concept itself was eliminated;
-- file deletion by itself never deletes a Canvas entity;
-- normal coding sessions receive no Repo Canvas prompt, hook, or `AGENTS.md` contract;
-- installation never reads or rewrites `AGENTS.md`, `CLAUDE.md`, coding-agent hooks, or provider credentials;
-- the storage contract contains only semantic areas, entities, relations, work satellites and activity — the old task-board and owner-command formats are gone.
-
-The observer does not read hidden reasoning, tool results, scan product files, control agents, or send owner commands. It reads the public local journals used by each agent's resume/history feature and filters them by repository root. Kimi `think` parts and Claude `thinking` parts are ignored.
-
-## What the owner sees
-
-- large Miro-like project areas;
-- persistent module and responsibility nodes;
-- meaningful runtime and data relations;
-- small planned, active, blocked, or provisional work satellites;
-- an active orbit on every entity currently being changed;
-- entity passports and recent activity in the left rail;
-- draggable areas and nodes with saved owner layout;
-- double-click navigation from work to its Codex App task or exact Codex/Claude/Kimi CLI resume command (`kimi -r <session>` for current Kimi Code).
-
-There is no semantic entity limit. The same canvas can represent four modules or hundreds.
-
-## Hand-off to another person
-
-The shortest path is to send an agent this repository URL and one sentence:
+Send your agent this repository URL and one sentence:
 
 ```text
 https://github.com/m0ast-git/repo-canvas
-Вот тулза для визуализации проекта — поставь её в этот репозиторий, настрой, построй первоначальную карту и дай мне локальную ссылку на Canvas.
+Install this project-visualization tool in the current repository, build the initial map, start it and give me the local Canvas URL.
 ```
 
-The agent should read this README and [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt), then install the pinned release directly from GitHub:
+The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.0
+npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.1
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
 
-This is the primary installation scenario. It does not require downloading or unpacking an archive manually.
+Open the printed loopback URL in a browser. Keep that foreground terminal running while you use the Canvas.
 
-For an offline hand-off, send two files from the release kit: `repo-canvas-0.8.0.tgz` and `INSTALL_WITH_AGENT.txt`.
+## What you see
 
-The recipient places them in an existing repository, opens one coding-agent conversation there, attaches the text file and asks the agent to install it. After installation, product agents do not need to know Repo Canvas exists.
+- project areas that group related parts of the system;
+- persistent modules, responsibilities, stores, pipeline stages and integrations;
+- meaningful runtime, data and control-flow relations;
+- a provisional work card as soon as a supported agent turn is observed;
+- live work attached to every semantic entity it affects;
+- entity passports and recent activity in the left rail;
+- draggable areas and nodes with saved layout;
+- direct navigation back to Codex App or an exact Codex, Claude Code or Kimi Code CLI resume command.
 
-## Manual installation
+The data model has no fixed entity cap. One Canvas can hold a small project or a map with hundreds of semantic entities.
+
+## How it works
+
+`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect inspects the repository once and builds its semantic map.
+
+When the Canvas server is running, Observer watches public local session journals for this repository. It creates a provisional card on the first observed turn event, then uses `gpt-5.4-mini` to classify small event deltas and attach the work to the map. On completion, Observer updates affected passports and relations when the session contains enough evidence.
+
+Observer supports:
+
+| Agent surface | Live observation | Return to session |
+| --- | --- | --- |
+| Codex App | Yes | Exact task link |
+| Codex CLI | Yes | `codex resume <session>` |
+| Claude Code CLI | Yes | `claude --resume <session>` |
+| Kimi Code CLI | Yes | `kimi -r <session>` |
+
+Observer reads public user messages, agent messages and tool-call metadata. Claude `thinking`, Kimi `think`, hidden reasoning and tool results are ignored. It filters sessions by repository root and does not rescan product files during observation.
+
+## Requirements and installation footprint
+
+- Node.js 22 or newer;
+- Git;
+- a locally authenticated Codex installation for Architect and Observer model calls;
+- Windows or macOS.
+
+The npm installation adds Repo Canvas as an exact development dependency. `setup` adds three package scripts, the ignored `.repo-canvas/` runtime directory and two `.gitignore` entries. It does not add coding-agent instructions or hooks.
+
+The server binds to loopback only. Semantic events and Observer cursors stay in the repository's ignored `.repo-canvas/` directory. Model calls use existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters only parse their local journals; they do not copy credentials or call those providers. No API key is copied into the project.
+
+## Offline installation
+
+Download `repo-canvas-0.8.1-kit.zip` from the [latest release](https://github.com/m0ast-git/repo-canvas/releases/latest). Copy `repo-canvas-0.8.1.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+
+Manual commands:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.0.tgz
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.1.tgz
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
 
-Requirements: Node.js 22+, Git, and a locally authenticated Codex subscription for Architect/Observer model calls. Claude Code and Kimi Code sessions are detected automatically when their local journals exist; they are not required. Windows and macOS use the same commands. The server binds to loopback only.
-
-Useful commands:
+## Useful commands
 
 ```text
 npm run repo-canvas -- doctor
 npm run repo-canvas -- architect --refresh
 npm run repo-canvas -- observer status
+npm run repo-canvas -- observer disable
+npm run repo-canvas -- observer enable
 npm run repo-canvas -- snapshot
 npm run repo-canvas -- check
 ```
@@ -82,10 +96,6 @@ REPO_CANVAS_ARCHITECT_EFFORT
 REPO_CANVAS_OBSERVER_MODEL
 REPO_CANVAS_OBSERVER_EFFORT
 ```
-
-## Privacy boundary
-
-Repo Canvas stores its semantic event log and observer cursor in the repository's ignored `.repo-canvas/` directory. Model calls use the user's existing local Codex authentication through the official Codex SDK. Claude and Kimi adapters are read-only journal parsers and do not copy credentials or make provider calls. No API key is copied into the project.
 
 ## License
 

@@ -14,7 +14,7 @@ const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const runtimeConfig = readRuntimeConfig();
 let observerService = null;
 
-if (!loopbackHosts.has(host)) throw new Error(`Repo Canvas v1 only binds to loopback; received CANVAS_HOST=${host}`);
+if (!loopbackHosts.has(host)) throw new Error(`Repo Canvas only binds to loopback; received CANVAS_HOST=${host}`);
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`Invalid CANVAS_PORT: ${process.env.CANVAS_PORT}`);
 
 const mimeTypes = new Map([
