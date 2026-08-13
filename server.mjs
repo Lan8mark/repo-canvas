@@ -150,6 +150,38 @@ function saveLayout(body) {
   return { revision: requestedRevision + events.length, saved: events.length };
 }
 
+function saveRename(body) {
+  const requestedRevision = Number(body.canvasRevision);
+  if (!Number.isInteger(requestedRevision) || requestedRevision < 0) throw new HttpError(400, "canvasRevision must be a non-negative integer");
+  const kind = String(body.kind || "").trim();
+  const id = String(body.id || "").trim();
+  const value = String(body.value || "").trim();
+  if (!id) throw new HttpError(400, "id is required");
+  if (!value) throw new HttpError(400, "The new name must not be empty");
+  if (value.length > 240) throw new HttpError(400, "The new name must be 240 characters or fewer");
+  const snapshot = getSnapshot();
+  if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before renaming");
+  if (requestedRevision !== snapshot.revision) throw new HttpError(409, "Canvas changed; refresh before renaming", { revision: snapshot.revision });
+  const collections = {
+    area: { items: snapshot.areas, type: "area.upsert", field: "ownerTitle" },
+    entity: { items: snapshot.entities, type: "entity.upsert", field: "ownerLabel" },
+    relation: { items: snapshot.relations, type: "relation.upsert", field: "ownerLabel" },
+  };
+  const target = collections[kind];
+  if (!target) throw new HttpError(400, `Unsupported rename kind: ${kind}`);
+  const current = target.items.find((item) => item.id === id);
+  if (!current) throw new HttpError(404, `${kind} not found: ${id}`);
+  const { actor, updatedAt, ...payload } = current;
+  const event = createEvent(target.type, { actor: "owner", payload: { ...payload, [target.field]: value } });
+  try {
+    appendEvents([event], { expectedRevision: requestedRevision });
+  } catch (error) {
+    if (error.code === "STALE_REVISION") throw new HttpError(409, "Canvas changed; refresh before renaming", { revision: error.currentRevision });
+    throw error;
+  }
+  return { revision: requestedRevision + 1, kind, id, value };
+}
+
 function findSessionNode(body) {
   const workId = String(body.workId || "").trim();
   if (!workId) throw new HttpError(400, "workId is required");
@@ -242,6 +274,13 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/layout") {
       guardMutation(request);
       const result = saveLayout(await readJson(request));
+      sendJson(response, 201, { ok: true, ...result });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/rename") {
+      guardMutation(request);
+      const result = saveRename(await readJson(request));
       sendJson(response, 201, { ok: true, ...result });
       return;
     }

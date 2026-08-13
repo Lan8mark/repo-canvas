@@ -255,9 +255,9 @@ function naturalCompare(a, b) {
 function activityLabel(event) {
   const payload = event.payload || {};
   if (event.type === "activity.log") return payload.message || "Activity recorded";
-  if (event.type === "area.upsert") return `Area ${payload.title || payload.id} updated`;
+  if (event.type === "area.upsert") return `Area ${payload.ownerTitle || payload.title || payload.id} updated`;
   if (event.type === "area.remove") return `Area ${payload.id} removed: ${payload.reason || "no longer exists"}`;
-  if (event.type === "entity.upsert") return `${payload.label || payload.id} → ${payload.status || "updated"}`;
+  if (event.type === "entity.upsert") return `${payload.ownerLabel || payload.label || payload.id} → ${payload.status || "updated"}`;
   if (event.type === "entity.remove") return `Entity ${payload.id} removed: ${payload.reason || "no longer exists"}`;
   if (event.type === "relation.upsert") return `Relation ${payload.from} → ${payload.to}`;
   if (event.type === "relation.remove") return `Relation ${payload.id} removed`;

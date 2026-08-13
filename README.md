@@ -16,7 +16,7 @@ Install this project-visualization tool in the current repository, build the ini
 The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.2
+npm install --save-dev --save-exact --ignore-scripts github:m0ast-git/repo-canvas#v0.8.3
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```
@@ -33,6 +33,7 @@ Open the printed loopback URL in a browser. Keep that foreground terminal runnin
 - entity passports and recent activity in the left rail;
 - collapsible project sections, full-map reset and an in-canvas legend;
 - draggable areas and nodes with saved layout;
+- owner-controlled names for areas, entities and relations by double-clicking their labels;
 - direct navigation back to Codex App or an exact Codex, Claude Code or Kimi Code CLI resume command.
 
 The data model has no fixed entity cap. One Canvas can hold a small project or a map with hundreds of semantic entities.
@@ -67,12 +68,12 @@ The server binds to loopback only and prints a fresh tokenized Canvas URL on eve
 
 ## Offline installation
 
-Download `repo-canvas-0.8.2-kit.zip` from the [latest release](https://github.com/m0ast-git/repo-canvas/releases/latest). Copy `repo-canvas-0.8.2.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+Download `repo-canvas-0.8.3-kit.zip` from the [latest release](https://github.com/m0ast-git/repo-canvas/releases/latest). Copy `repo-canvas-0.8.3.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
 
 Manual commands:
 
 ```text
-npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.2.tgz
+npm install --save-dev --save-exact --ignore-scripts ./repo-canvas-0.8.3.tgz
 npx --no-install repo-canvas setup
 npm run repo-canvas:start
 ```

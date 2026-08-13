@@ -105,6 +105,7 @@ export function validateEvent(event) {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });
     requireString(errors, payload.title, "payload.title", { max: 240 });
     optionalString(errors, payload.note, "payload.note", 2000);
+    optionalString(errors, payload.ownerTitle, "payload.ownerTitle", 240);
     for (const field of ["x", "y", "width", "height", "order"]) {
       if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
     }
@@ -119,6 +120,7 @@ export function validateEvent(event) {
     optionalString(errors, payload.path, "payload.path", 1000);
     optionalString(errors, payload.purpose, "payload.purpose", 2000);
     optionalString(errors, payload.note, "payload.note", 2000);
+    optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
     optionalStringList(errors, payload.inputs, "payload.inputs");
     optionalStringList(errors, payload.outputs, "payload.outputs");
     optionalStringList(errors, payload.dependsOn, "payload.dependsOn");
@@ -131,6 +133,7 @@ export function validateEvent(event) {
     requireString(errors, payload.from, "payload.from", { max: 128, id: true });
     requireString(errors, payload.to, "payload.to", { max: 128, id: true });
     optionalString(errors, payload.label, "payload.label", 240);
+    optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
     if (!new Set(["existing", "planned"]).has(payload.status)) errors.push(`payload.status has unsupported value '${String(payload.status)}'`);
   } else if (event.type === "relation.remove") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });

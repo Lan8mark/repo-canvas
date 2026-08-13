@@ -11,7 +11,7 @@ import test from "node:test";
 import { resolveSessionTarget } from "../repo-canvas/scripts/session-locator.mjs";
 import { reduceEvents } from "../repo-canvas/scripts/canvas-store.mjs";
 import { validateEvent } from "../repo-canvas/scripts/canvas-schema.mjs";
-import { anchoredZoomTransform, boxesOverlap, captionAwareDetour, captionShapesOverlap, chooseFloatingCaption, connectionAnchors, crossAreaDetour, packAreaRectangles, paddedBox, placeRelationLabel, relationCurve, sampleRelationCurve } from "../public/canvas-layout.js";
+import { anchoredZoomTransform, boxesOverlap, captionAwareDetour, captionShapesOverlap, chooseFloatingCaption, connectionAnchors, crossAreaDetour, packAreaRectangles, paddedBox, placeRelationLabel, relationCurve, routesShareLane, sampleRelationCurve } from "../public/canvas-layout.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(repositoryRoot, "repo-canvas", "scripts", "canvas.mjs");
@@ -99,6 +99,14 @@ test("cross-area routes leave through row lanes instead of cutting through sibli
   const sibling = paddedBox({ x: 318, y: 102 }, 244, 122, 0);
   const samples = sampleRelationCurve(relationCurve(route.from, route.to, { waypoints: route.waypoints }));
   assert.equal(samples.some((point) => point.x > sibling.x && point.x < sibling.x + sibling.width && point.y > sibling.y && point.y < sibling.y + sibling.height), false);
+});
+
+test("parallel relation routes reserve separate visual lanes", () => {
+  const first = relationCurve({ x: 100, y: 0 }, { x: 100, y: 600 });
+  const overlapping = relationCurve({ x: 112, y: 80 }, { x: 112, y: 520 });
+  const separated = relationCurve({ x: 140, y: 80 }, { x: 140, y: 520 });
+  assert.equal(routesShareLane(overlapping.points, [first.points]), true);
+  assert.equal(routesShareLane(separated.points, [first.points]), false);
 });
 
 test("automatic area packing has no small-project cap or vertical overlap", () => {
@@ -349,6 +357,7 @@ test("loopback server guards navigation, reports port collision, and stops", asy
   const root = makeRepository(t);
   assert.equal(runCli(root, ["area", "--id", "core", "--title", "Core"]).status, 0);
   assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Module", "--status", "operational"]).status, 0);
+  assert.equal(runCli(root, ["relation", "--id", "module-loop", "--from", "module", "--to", "module", "--label", "uses"]).status, 0);
   assert.equal(runCli(root, ["work", "--id", "demo", "--title", "Demo work", "--targets", "module", "--status", "planned", "--actor", "codex"], {
     env: { CODEX_THREAD_ID: "", CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "" },
   }).status, 0);
@@ -437,6 +446,38 @@ test("loopback server guards navigation, reports port collision, and stops", asy
   const movedState = await request(port, { path: "/api/state", headers: authHeaders });
   assert.deepEqual([movedState.json.areas[0].x, movedState.json.areas[0].y], [180, 220]);
   assert.deepEqual([movedState.json.entities[0].x, movedState.json.entities[0].y], [260, 340]);
+  let renameRevision = movedState.json.revision;
+  for (const [kind, id, value] of [
+    ["area", "core", "Runtime"],
+    ["entity", "module", "Worker"],
+    ["relation", "module-loop", "feeds itself"],
+  ]) {
+    const renamePayload = JSON.stringify({ canvasRevision: renameRevision, kind, id, value });
+    const renamed = await request(port, {
+      method: "POST",
+      path: "/api/rename",
+      headers: { ...commonHeaders, "Content-Length": Buffer.byteLength(renamePayload), Origin: `http://127.0.0.1:${port}` },
+      body: renamePayload,
+    });
+    assert.equal(renamed.status, 201, renamed.text);
+    renameRevision = renamed.json.revision;
+  }
+  const renamedState = await request(port, { path: "/api/state", headers: authHeaders });
+  assert.equal(renamedState.json.areas[0].ownerTitle, "Runtime");
+  assert.equal(renamedState.json.entities[0].ownerLabel, "Worker");
+  assert.equal(renamedState.json.relations[0].ownerLabel, "feeds itself");
+  assert.equal(runCli(root, ["entity", "--id", "module", "--area", "core", "--label", "Upstream module", "--status", "operational"]).status, 0);
+  const refreshedState = await request(port, { path: "/api/state", headers: authHeaders });
+  assert.equal(refreshedState.json.entities[0].label, "Upstream module");
+  assert.equal(refreshedState.json.entities[0].ownerLabel, "Worker", "owner name must survive later agent updates");
+  const emptyRenamePayload = JSON.stringify({ canvasRevision: renameRevision, kind: "entity", id: "module", value: "   " });
+  const emptyRename = await request(port, {
+    method: "POST",
+    path: "/api/rename",
+    headers: { ...commonHeaders, "Content-Length": Buffer.byteLength(emptyRenamePayload), Origin: `http://127.0.0.1:${port}` },
+    body: emptyRenamePayload,
+  });
+  assert.equal(emptyRename.status, 400);
   const staleLayout = await request(port, {
     method: "POST",
     path: "/api/layout",

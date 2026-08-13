@@ -53,11 +53,12 @@
         <div id="world" class="world">
           <div id="areaLayer" class="area-layer"></div>
           <svg id="edgeLayer" class="edge-layer" aria-hidden="true"></svg>
+          <div id="relationLabelLayer" class="relation-label-layer"></div>
           <div id="entityLayer" class="entity-layer"></div>
           <div id="workLayer" class="work-layer"></div>
         </div>
         <p id="emptyState" class="empty-state">Смысловая карта проекта пока не построена.</p>
-        <span class="canvas-hint">тяните фон · колесо меняет масштаб · двойной клик по работе открывает сессию</span>
+        <span class="canvas-hint">тяните фон · колесо меняет масштаб · двойной клик по названию переименовывает</span>
         <aside id="canvasLegend" class="canvas-legend" aria-label="Легенда карты" hidden>
           <header><span><small>ЛЕГЕНДА</small><strong>Как читать карту</strong></span><button id="legendClose" type="button" aria-label="Закрыть легенду">×</button></header>
           <div class="legend-list">
@@ -74,6 +75,14 @@
       </div>
     </section>
   </main>
+  <dialog id="renameDialog" class="rename-dialog">
+    <form id="renameForm" method="dialog">
+      <small>РУЧНОЕ ИМЯ</small>
+      <h2 id="renameTitle">Переименовать</h2>
+      <label><span>Новое название</span><input id="renameInput" name="name" maxlength="240" autocomplete="off" required /></label>
+      <div><button id="renameCancel" value="cancel" type="button">Отмена</button><button class="rename-save" value="save" type="submit">Сохранить</button></div>
+    </form>
+  </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/app.js"></script>
 </body>

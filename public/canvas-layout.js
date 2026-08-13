@@ -178,9 +178,37 @@ export function relationCurve(from, to, { laneOffset = 0, radius = 34, waypoints
   }
   return {
     d: roundedOrthogonalPath(points, radius),
+    points,
     pointAt: (progress) => pointOnPolyline(points, progress),
     tangentAt: (progress) => pointOnPolyline(points, progress).tangent,
   };
+}
+
+function orthogonalSegments(points) {
+  return points.slice(1).map((to, index) => {
+    const from = points[index];
+    const vertical = Math.abs(to.x - from.x) < 1;
+    const horizontal = Math.abs(to.y - from.y) < 1;
+    if (!vertical && !horizontal) return null;
+    return {
+      orientation: vertical ? "vertical" : "horizontal",
+      axis: vertical ? (from.x + to.x) / 2 : (from.y + to.y) / 2,
+      start: vertical ? Math.min(from.y, to.y) : Math.min(from.x, to.x),
+      end: vertical ? Math.max(from.y, to.y) : Math.max(from.x, to.x),
+    };
+  }).filter(Boolean);
+}
+
+export function routesShareLane(points, reservedRoutes, { gap = 34, minOverlap = 56 } = {}) {
+  const segments = orthogonalSegments(points);
+  return reservedRoutes.some((reserved) => {
+    const otherSegments = orthogonalSegments(reserved);
+    return segments.some((segment) => otherSegments.some((other) => {
+      if (segment.orientation !== other.orientation || Math.abs(segment.axis - other.axis) >= gap) return false;
+      const overlap = Math.min(segment.end, other.end) - Math.max(segment.start, other.start);
+      return overlap >= minOverlap;
+    }));
+  });
 }
 
 export function sampleRelationCurve(curve, steps = 100) {
