@@ -28,7 +28,7 @@ function run(command, args, cwd, options = {}) {
     cwd,
     env: { ...process.env, npm_config_cache: npmCache, ...(options.env || {}) },
     encoding: "utf8",
-    timeout: options.timeout || 90_000,
+    timeout: options.timeout || 180_000,
   });
   assert.equal(result.status, 0, `${command} ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
   return result;

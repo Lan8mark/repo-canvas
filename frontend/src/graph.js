@@ -32,16 +32,16 @@ function areaColor(areaId = "") {
   return AREA_COLORS[Math.abs(hash) % AREA_COLORS.length];
 }
 
-export function areaTitle(area) {
-  return area?.ownerTitle || area?.title || "Область";
+export function areaTitle(area, language = "ru") {
+  return area?.[language === "en" ? "ownerTitleEn" : "ownerTitleRu"] || area?.title || (language === "en" ? "Product" : "Продукт");
 }
 
-export function entityLabel(entity) {
-  return entity?.ownerLabel || entity?.label || "Сущность";
+export function entityLabel(entity, language = "ru") {
+  return entity?.[language === "en" ? "ownerLabelEn" : "ownerLabelRu"] || entity?.label || (language === "en" ? "Responsibility" : "Ответственность");
 }
 
-export function relationLabel(relation) {
-  return relation?.ownerLabel || relation?.label || "связь";
+export function relationLabel(relation, language = "ru") {
+  return relation?.[language === "en" ? "ownerLabelEn" : "ownerLabelRu"] || relation?.label || (language === "en" ? "relation" : "связь");
 }
 
 export function relationTechnical(relation) {
@@ -60,13 +60,13 @@ function hasCurrentLayout(item) {
   return item?.layoutVersion === LAYOUT_VERSION;
 }
 
-function portsFor(entity, relations) {
+function portsFor(entity, relations, language = "ru") {
   const incoming = relations
     .filter((relation) => relation.to === entity.id)
-    .map((relation) => ({ id: relation.id, label: relationLabel(relation), peer: relation.from }));
+    .map((relation) => ({ id: relation.id, label: relationLabel(relation, language), peer: relation.from }));
   const outgoing = relations
     .filter((relation) => relation.from === entity.id)
-    .map((relation) => ({ id: relation.id, label: relationLabel(relation), peer: relation.to }));
+    .map((relation) => ({ id: relation.id, label: relationLabel(relation, language), peer: relation.to }));
   return { incoming, outgoing };
 }
 
@@ -91,8 +91,8 @@ function wrappedLines(value, capacity) {
   return lines;
 }
 
-export function entityContentHeight(entity) {
-  const titleLines = wrappedLines(entityLabel(entity), 34);
+export function entityContentHeight(entity, language = "ru") {
+  const titleLines = wrappedLines(entityLabel(entity, language), 34);
   const logicLines = wrappedLines(entity.goal || entity.problem, 43) + wrappedLines(entity.solution || entity.purpose, 43);
   const technicalLines = wrappedLines(entity.mechanism || entity.note || entity.purpose, 56)
     + wrappedLines(entity.invariants?.[0], 44)
@@ -103,12 +103,12 @@ export function entityContentHeight(entity) {
   return Math.max(206, logicHeight, technicalHeight);
 }
 
-function entityHeight(entity, relations) {
-  const ports = portsFor(entity, relations);
-  return Math.max(entityContentHeight(entity), 110 + Math.max(ports.incoming.length, ports.outgoing.length) * 25);
+function entityHeight(entity, relations, language = "ru") {
+  const ports = portsFor(entity, relations, language);
+  return Math.max(entityContentHeight(entity, language), 110 + Math.max(ports.incoming.length, ports.outgoing.length) * 25);
 }
 
-async function layoutArea(area, entities, relations) {
+async function layoutArea(area, entities, relations, language) {
   const entityIds = new Set(entities.map((entity) => entity.id));
   const internal = relations.filter((relation) => entityIds.has(relation.from) && entityIds.has(relation.to));
   const graph = await elk.layout({
@@ -125,7 +125,7 @@ async function layoutArea(area, entities, relations) {
     children: entities.map((entity) => ({
       id: entity.id,
       width: entityWidth(entity),
-      height: entityHeight(entity, relations),
+      height: entityHeight(entity, relations, language),
     })),
     edges: internal.map((relation) => ({ id: relation.id, sources: [relation.from], targets: [relation.to] })),
   });
@@ -216,6 +216,7 @@ function aggregateAreaLinks(areaNodes, entities, relations) {
 }
 
 export async function buildGraph(snapshot, { level = "support" } = {}) {
+  const language = snapshot.settings?.language || "ru";
   const areas = snapshot.areas || [];
   const maximumRole = ROLE_LEVEL[level] ?? ROLE_LEVEL.support;
   const entities = (snapshot.entities || []).filter((entity) => ROLE_LEVEL[entityRole(entity)] <= maximumRole);
@@ -225,7 +226,7 @@ export async function buildGraph(snapshot, { level = "support" } = {}) {
 
   await Promise.all(areas.map(async (area) => {
     const members = entities.filter((entity) => entity.areaId === area.id);
-    areaLayouts.set(area.id, await layoutArea(area, members, relations));
+    areaLayouts.set(area.id, await layoutArea(area, members, relations, language));
   }));
 
   const automaticAreas = packAreas(areas, areaLayouts);
@@ -243,13 +244,13 @@ export async function buildGraph(snapshot, { level = "support" } = {}) {
     for (const entity of members) {
       if (!hasCurrentLayout(entity) || !finite(entity.x) || !finite(entity.y)) continue;
       width = Math.max(width, Number(entity.x) - origin.x + entityWidth(entity) + 44);
-      height = Math.max(height, Number(entity.y) - origin.y + entityHeight(entity, relations) + 44);
+      height = Math.max(height, Number(entity.y) - origin.y + entityHeight(entity, relations, language) + 44);
     }
     return {
       id: `area:${area.id}`,
       type: "area",
       position: origin,
-      data: { area, label: areaTitle(area), count: members.length },
+      data: { area, label: areaTitle(area, language), count: members.length, language },
       style: { width, height },
       selectable: true,
       draggable: true,
@@ -263,7 +264,7 @@ export async function buildGraph(snapshot, { level = "support" } = {}) {
     const position = hasCurrentLayout(entity) && finite(entity.x) && finite(entity.y)
       ? { x: Number(entity.x) - areaPosition.x, y: Number(entity.y) - areaPosition.y }
       : automatic;
-    const ports = portsFor(entity, relations);
+    const ports = portsFor(entity, relations, language);
     return {
       id: entity.id,
       type: "entity",
@@ -274,14 +275,15 @@ export async function buildGraph(snapshot, { level = "support" } = {}) {
         entity,
         role: entityRole(entity),
         weight: entityWeight(entity),
-        label: entityLabel(entity),
-        areaLabel: areaTitle(areas.find((area) => area.id === entity.areaId)),
+        label: entityLabel(entity, language),
+        areaLabel: areaTitle(areas.find((area) => area.id === entity.areaId), language),
+        language,
         areaColor: areaColor(entity.areaId),
         ...ports,
       },
       style: {
         width: entityWidth(entity),
-        height: entityHeight(entity, relations),
+        height: entityHeight(entity, relations, language),
         "--entity-weight": entityWeight(entity),
       },
       zIndex: 2,
@@ -297,8 +299,8 @@ export async function buildGraph(snapshot, { level = "support" } = {}) {
     target: relation.to,
     sourceHandle: `out:${relation.id}`,
     targetHandle: `in:${relation.id}`,
-    label: relationLabel(relation),
-    data: { relation },
+    label: relationLabel(relation, language),
+    data: { relation, language },
     markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13 },
     className: [
       relation.status === "planned" ? "is-planned" : "",

@@ -5,7 +5,7 @@ import { appendEvent, createEvent, getSnapshot } from "./canvas-store.mjs";
 import { readAppendedRecords } from "./codex-sessions.mjs";
 import { runCodexStructured } from "./model-runtime.mjs";
 import { OBSERVER_OUTPUT_SCHEMA, applyObserverDecision } from "./semantic-model.mjs";
-import { readObserverState, readRuntimeConfig, writeObserverState } from "./runtime-config.mjs";
+import { normalizeLanguage, readObserverState, readRuntimeConfig, writeObserverState } from "./runtime-config.mjs";
 import { sessionAdapter, sessionAdapters } from "./session-adapters.mjs";
 
 const MAX_EVENTS = 80;
@@ -28,15 +28,17 @@ function compactMap(snapshot) {
   };
 }
 
-export function observerPrompt({ turn, final, snapshot }) {
+export function observerPrompt({ turn, final, snapshot, language = "ru" }) {
+  const outputLanguage = normalizeLanguage(language) === "ru" ? "Russian" : "English";
   return `You are Repo Canvas Observer, a silent semantic stenographer. Interpret one coding-agent turn and update an existing high-level project map.
 
 You never inspect the repository, never write code, never answer the owner and never invent explanations. Use only the supplied public session events and current semantic map. Hidden reasoning is unavailable and irrelevant.
 
 Rules:
+- output every human-readable field strictly in ${outputLanguage}; never infer language from the session and never mix languages; official product and technology names may retain their spelling;
 - describe the concrete work in a short title and summary;
 - attach work to every existing semantic entity it genuinely affects;
-- during active work, new approved concepts may be created as planned entities and planned relations;
+- create a planned entity only when the public session explicitly establishes a new durable logical block with its own product capability, contract, state boundary, transformation or decision; ordinary implementation work attaches to an existing responsibility;
 - at completion, update passports and relations only when the session provides enough evidence;
 - removing a file is not enough to remove an entity;
 - remove an entity only when the session establishes that the concept itself was eliminated or merged away;
@@ -44,6 +46,7 @@ Rules:
 - if evidence is insufficient, leave architecture unchanged;
 - preserve the map's two layers when architecture genuinely changes: problem/solution are plain-language logic; mechanism/invariants and relation technical are concrete implementation evidence;
 - never replace plain-language logic with code vocabulary from the session;
+- files, stores, databases, models, workers, runtimes, adapters, validators, frameworks, tests and pipeline stages are implementation details unless they establish an independently understandable logical block in an important system flow;
 - for a final successful turn use done; for abort use stopped; otherwise active or blocked;
 - return required structured output only.
 
@@ -54,15 +57,16 @@ Current semantic map: ${JSON.stringify(compactMap(snapshot))}
 New public events: ${JSON.stringify(turn.events)}`;
 }
 
-function provisionalWork(turn, meta, adapter) {
+function provisionalWork(turn, meta, adapter, language = "ru") {
+  const russian = normalizeLanguage(language) === "ru";
   appendEvent(createEvent("work.upsert", {
     actor: "observer",
     payload: {
       id: turn.workId,
-      title: "Новая работа",
+      title: russian ? "Новая работа" : "New work",
       status: "active",
       targets: [],
-      note: "Агент осмысливает задачу",
+      note: russian ? "Агент осмысливает задачу" : "The agent is interpreting the task",
       provisional: true,
       session: adapter.locator(meta),
     },
@@ -143,10 +147,12 @@ export class CodexObserver {
         turnId, workId: workId(session.meta.id || session.meta.session_id, turnId),
         sessionId: session.meta.id || session.meta.session_id, provider: session.provider || "codex",
         startedAt: this.now(), events: [], inferredAt: 0, initialInferred: false,
-        title: "Новая работа", summary: "Агент осмысливает задачу", targets: [], finished: false,
+        title: this.config.language === "en" ? "New work" : "Новая работа",
+        summary: this.config.language === "en" ? "The agent is interpreting the task" : "Агент осмысливает задачу",
+        targets: [], finished: false,
       };
       session.turns[turnId] = turn;
-      provisionalWork(turn, session.meta, sessionAdapter(session.provider || "codex"));
+      provisionalWork(turn, session.meta, sessionAdapter(session.provider || "codex"), this.config.language);
       return;
     }
     const turn = this.currentTurn(session, signal.turnId);
@@ -183,7 +189,7 @@ export class CodexObserver {
         const snapshot = getSnapshot();
         const result = await this.runner({
           role: "observer", cwd: this.config.repoRoot,
-          prompt: observerPrompt({ turn, final, snapshot }), outputSchema: OBSERVER_OUTPUT_SCHEMA,
+          prompt: observerPrompt({ turn, final, snapshot, language: this.config.language }), outputSchema: OBSERVER_OUTPUT_SCHEMA,
         });
         if (final && turn.finalKind === "aborted") result.value.workStatus = "stopped";
         const context = {

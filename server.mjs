@@ -7,7 +7,7 @@ import path from "node:path";
 import { appendEvents, createEvent, getSnapshot, packageRoot, projectRoot } from "./repo-canvas/scripts/canvas-store.mjs";
 import { runArchitect } from "./repo-canvas/scripts/architect.mjs";
 import { startObserver } from "./repo-canvas/scripts/observer.mjs";
-import { readRuntimeConfig } from "./repo-canvas/scripts/runtime-config.mjs";
+import { normalizeLanguage, readRuntimeConfig, writeRuntimeConfig } from "./repo-canvas/scripts/runtime-config.mjs";
 import { openSessionLocator } from "./repo-canvas/scripts/session-locator.mjs";
 import { createUpdateService } from "./repo-canvas/scripts/update-service.mjs";
 
@@ -30,11 +30,12 @@ function publicArchitectState() {
   return { ...architectState, running: architectJob !== null };
 }
 
-function startArchitectRefresh() {
+function startArchitectRefresh(language = readRuntimeConfig().language) {
   if (architectJob) return false;
   architectState = { status: "running", startedAt: new Date().toISOString(), finishedAt: null, result: null, error: null };
   architectJob = runArchitect({
     refresh: true,
+    language,
     onProgress: (stage, detail = null) => { architectState = { ...architectState, stage, detail }; },
   })
     .then((result) => {
@@ -219,17 +220,19 @@ function saveRename(body) {
   const snapshot = getSnapshot();
   if (snapshot.storeErrors.length) throw new HttpError(409, "Repo Canvas store must pass check before renaming");
   if (requestedRevision !== snapshot.revision) throw new HttpError(409, "Canvas changed; refresh before renaming", { revision: snapshot.revision });
+  const language = readRuntimeConfig().language;
+  const suffix = language === "ru" ? "Ru" : "En";
   const collections = {
-    area: { items: snapshot.areas, type: "area.upsert", field: "ownerTitle" },
-    entity: { items: snapshot.entities, type: "entity.upsert", field: "ownerLabel" },
-    relation: { items: snapshot.relations, type: "relation.upsert", field: "ownerLabel" },
+    area: { items: snapshot.areas, type: "area.upsert", field: "ownerTitle", localizedField: `ownerTitle${suffix}` },
+    entity: { items: snapshot.entities, type: "entity.upsert", field: "ownerLabel", localizedField: `ownerLabel${suffix}` },
+    relation: { items: snapshot.relations, type: "relation.upsert", field: "ownerLabel", localizedField: `ownerLabel${suffix}` },
   };
   const target = collections[kind];
   if (!target) throw new HttpError(400, `Unsupported rename kind: ${kind}`);
   const current = target.items.find((item) => item.id === id);
   if (!current) throw new HttpError(404, `${kind} not found: ${id}`);
   const { actor, updatedAt, ...payload } = current;
-  const event = createEvent(target.type, { actor: "owner", payload: { ...payload, [target.field]: value } });
+  const event = createEvent(target.type, { actor: "owner", payload: { ...payload, [target.field]: value, [target.localizedField]: value } });
   try {
     appendEvents([event], { expectedRevision: requestedRevision });
   } catch (error) {
@@ -318,13 +321,13 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/state") {
-      sendJson(response, 200, getSnapshot());
+      sendJson(response, 200, { ...getSnapshot(), settings: { language: readRuntimeConfig().language } });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/revision") {
       const snapshot = getSnapshot();
-      sendJson(response, 200, { revision: snapshot.revision, updatedAt: snapshot.updatedAt });
+      sendJson(response, 200, { revision: snapshot.revision, updatedAt: snapshot.updatedAt, language: readRuntimeConfig().language });
       return;
     }
 
@@ -383,6 +386,22 @@ const server = http.createServer(async (request, response) => {
       await readJson(request);
       const started = startArchitectRefresh();
       sendJson(response, 202, { ok: true, started, ...publicArchitectState() });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/language") {
+      guardMutation(request);
+      if (architectJob) throw new HttpError(409, "The project map is already being regenerated");
+      const body = await readJson(request);
+      let language;
+      try {
+        if (!body.language) throw new Error("language is required");
+        language = normalizeLanguage(body.language);
+      } catch (error) { throw new HttpError(400, error.message); }
+      const config = writeRuntimeConfig({ language });
+      if (observerService) observerService.observer.config.language = language;
+      const started = startArchitectRefresh(language);
+      sendJson(response, 202, { ok: true, language: config.language, started, ...publicArchitectState() });
       return;
     }
 

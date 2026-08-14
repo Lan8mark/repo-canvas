@@ -5,6 +5,14 @@ import { dataDirectory, projectRoot } from "./canvas-store.mjs";
 
 export const runtimeConfigFile = path.join(dataDirectory, "runtime.json");
 export const observerStateFile = path.join(dataDirectory, "observer-state.json");
+export const SUPPORTED_LANGUAGES = Object.freeze(["ru", "en"]);
+
+export function normalizeLanguage(value, fallback = "ru") {
+  const language = String(value || "").trim().toLowerCase();
+  if (SUPPORTED_LANGUAGES.includes(language)) return language;
+  if (value === undefined || value === null || value === "") return fallback;
+  throw new Error(`Unsupported Repo Canvas language '${value}'. Expected ru or en.`);
+}
 
 function atomicWrite(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -19,6 +27,7 @@ export function readRuntimeConfig() {
     return {
       enabled: parsed.enabled === true,
       repoRoot: fs.realpathSync.native(parsed.repoRoot || projectRoot),
+      language: normalizeLanguage(parsed.language || process.env.REPO_CANVAS_LANGUAGE),
       providers: Array.isArray(parsed.providers) && parsed.providers.length
         ? [...new Set(parsed.providers.map(String))]
         : [parsed.provider || "codex"],
@@ -26,13 +35,17 @@ export function readRuntimeConfig() {
     };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { enabled: false, repoRoot: fs.realpathSync.native(projectRoot), providers: ["codex", "claude", "kimi"], pollMs: 750 };
+    return { enabled: false, repoRoot: fs.realpathSync.native(projectRoot), language: normalizeLanguage(process.env.REPO_CANVAS_LANGUAGE), providers: ["codex", "claude", "kimi"], pollMs: 750 };
   }
 }
 
 export function writeRuntimeConfig(patch) {
   const current = readRuntimeConfig();
-  const next = { ...current, ...patch, repoRoot: fs.realpathSync.native(patch.repoRoot || current.repoRoot) };
+  const next = {
+    ...current, ...patch,
+    repoRoot: fs.realpathSync.native(patch.repoRoot || current.repoRoot),
+    language: normalizeLanguage(patch.language ?? current.language),
+  };
   atomicWrite(runtimeConfigFile, next);
   return next;
 }

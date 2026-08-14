@@ -1,79 +1,67 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { architectPrompt, auditPrompt, inventoryPrompt, validateInventoryCoverage } from "../repo-canvas/scripts/architect.mjs";
-import { validateNarrativeQuality } from "../repo-canvas/scripts/semantic-model.mjs";
+import { architectPrompt } from "../repo-canvas/scripts/architect.mjs";
+import { observerPrompt } from "../repo-canvas/scripts/observer.mjs";
+import { ARCHITECT_OUTPUT_SCHEMA, validateArchitecture, validateNarrativeQuality } from "../repo-canvas/scripts/semantic-model.mjs";
 
+const emptySnapshot = { areas: [], entities: [], relations: [] };
 const strongMap = {
-  areas: [{
-    id: "search", title: "Find project knowledge",
-    goal: "A newcomer must find relevant project knowledge without knowing its exact internal name.",
-    solution: "The project exposes one searchable representation of its code and durable knowledge.", order: 1,
-  }],
+  projectTitle: "Knowledge product", projectSummary: "People need project knowledge. The product makes it understandable.",
+  areas: [{ id: "knowledge", title: "Project knowledge", goal: "A newcomer needs to understand why the project exists and what it owns.", solution: "The product presents a compact explanation of its durable responsibilities.", order: 1 }],
   entities: [{
-    id: "hybrid-search", areaId: "search", label: "Hybrid search", role: "core", parentId: "", weight: 90,
-    status: "operational", path: "src/search.ts",
-    goal: "Find relevant information from either exact words or a plain-language description.",
-    solution: "One query combines exact, structural and semantic candidates into an explained result.",
-    mechanism: "The search service merges BM25, filters and vector retrieval into one ranked response.",
-    invariants: ["Every result retains the channels that caused it to rank."],
-    inputs: ["query"], outputs: ["ranked results"], dependsOn: [], evidence: ["src/search.ts#search"], covers: ["search"], order: 1,
+    id: "explain-project", areaId: "knowledge", label: "Explain the project", role: "core", parentId: "", weight: 90,
+    status: "operational", path: "src/explain.ts", goal: "A newcomer cannot act safely without understanding the product first.",
+    solution: "The product explains its major responsibilities in one stable map.", mechanism: "Representative entry points verify each responsibility after its reason has been established.",
+    invariants: ["Implementation details never become responsibilities by default."], inputs: ["repository"], outputs: ["project explanation"],
+    dependsOn: [], evidence: ["src/explain.ts#explain"], covers: ["explain-project"], order: 1,
   }],
   relations: [],
+  removedAreaIds: [], removedEntityIds: [], removedRelationIds: [],
 };
 
-test("architect pipeline starts from facts and enforces goal-to-solution hierarchy", () => {
-  assert.match(inventoryPrompt(), /public capabilities/);
-  const prompt = architectPrompt({ snapshot: { areas: [], entities: [], relations: [] }, refresh: false, inventory: { facts: [] } });
-  assert.match(prompt, /GOAL -> TECHNICAL SOLUTION/);
-  assert.match(prompt, /Separate stores, models and runtimes/);
-  assert.match(prompt, /explanatory value/);
-  assert.match(prompt, /materializer, validator or executor/);
-  assert.match(prompt, /Omission is not deletion/);
-  assert.match(auditPrompt({ inventory: {}, candidate: {}, snapshot: { areas: [], entities: [], relations: [] }, refresh: false }), /Core nodes form/);
+test("Architect uses one reason-first structural pipeline instead of inventory coverage", () => {
+  const prompt = architectPrompt({ snapshot: emptySnapshot, refresh: true, language: "ru" });
+  assert.match(prompt, /explanatory compression, not an inventory/i);
+  assert.match(prompt, /Product boundaries/);
+  assert.match(prompt, /Human reasons/);
+  assert.match(prompt, /compression must not erase the system's composition/i);
+  assert.match(prompt, /Usually produce 6-12 entities across core and support/);
+  assert.match(prompt, /state boundary, transformation or decision/i);
+  assert.match(prompt, /primary end-to-end flow/i);
+  assert.match(prompt, /replacing a database, framework or worker/i);
+  assert.match(prompt, /durable architectural memory/i);
+  assert.match(prompt, /Omission is never deletion/i);
+  assert.match(prompt, /Never remove a concept merely because it was not rediscovered/i);
+  assert.match(prompt, /Output language is strictly Russian/);
+  assert.doesNotMatch(prompt, /Every inventory fact must be covered/);
+  assert.doesNotMatch(prompt, /Separate stores, models and runtimes/);
 });
 
-test("narrative quality gate accepts a weighted evidence-backed product block", () => {
+test("Architect schema makes refresh removals explicit", () => {
+  assert.deepEqual(ARCHITECT_OUTPUT_SCHEMA.required, ["projectTitle", "projectSummary", "areas", "entities", "relations", "removedAreaIds", "removedEntityIds", "removedRelationIds"]);
+  assert.ok(ARCHITECT_OUTPUT_SCHEMA.properties.removedAreaIds);
+  assert.ok(ARCHITECT_OUTPUT_SCHEMA.properties.removedEntityIds);
+  assert.ok(ARCHITECT_OUTPUT_SCHEMA.properties.removedRelationIds);
+});
+
+test("narrative quality accepts a compact evidence-backed responsibility", () => {
   assert.equal(validateNarrativeQuality(strongMap), strongMap);
+  assert.equal(validateArchitecture(strongMap, emptySnapshot, { refresh: true }), strongMap);
 });
 
-test("narrative quality gate rejects inventory-only entities", () => {
-  assert.throws(() => validateNarrativeQuality({
-    ...strongMap,
-    entities: [{ ...strongMap.entities[0], goal: "", solution: "Stores schemas and write roots.", invariants: [] }],
-  }), /goal|invariants/);
+test("refresh preserves existing endpoints unless removal is explicit", () => {
+  const snapshot = {
+    areas: [{ id: "old-area" }], entities: [{ id: "old", areaId: "old-area" }], relations: [],
+  };
+  const evolving = { ...strongMap, relations: [{ id: "stale", from: "explain-project", to: "old", label: "keeps established context", technical: "map resolves stable concept id", status: "existing" }] };
+  assert.equal(validateArchitecture(evolving, snapshot, { refresh: true }), evolving);
+  assert.throws(() => validateArchitecture({ ...evolving, removedEntityIds: ["old"] }, snapshot, { refresh: true }), /Unknown relation endpoint/);
 });
 
-test("narrative quality gate rejects missing implementation evidence", () => {
-  assert.throws(() => validateNarrativeQuality({
-    ...strongMap,
-    entities: [{ ...strongMap.entities[0], path: "", evidence: [] }],
-  }), /evidence/);
-});
-
-test("narrative quality gate rejects titles that belong in the body", () => {
-  assert.throws(() => validateNarrativeQuality({
-    ...strongMap,
-    entities: [{ ...strongMap.entities[0], label: "This title contains far too many explanatory words for a card" }],
-  }), /label|too explanatory/);
-});
-
-test("inventory coverage rejects a missing embedding model", () => {
-  assert.throws(() => validateInventoryCoverage({
-    facts: [
-      { id: "search", kind: "capability" },
-      { id: "embedding", kind: "model" },
-    ],
-    mainFlows: [["embedding", "search"]],
-  }, strongMap), /embedding/);
-});
-
-test("inventory coverage rejects collapsing a model and store into one card", () => {
-  assert.throws(() => validateInventoryCoverage({
-    facts: [{ id: "embedding", kind: "model" }, { id: "vectors", kind: "store" }],
-    mainFlows: [["embedding", "vectors"]],
-  }, {
-    entities: [{ id: "semantic-index", covers: ["embedding", "vectors"] }],
-    relations: [],
-  }), /collapses fundamental facts/);
+test("Observer preserves reason-first responsibilities and the selected language", () => {
+  const prompt = observerPrompt({ turn: { sessionId: "fixture", events: [] }, final: false, snapshot: emptySnapshot, language: "en" });
+  assert.match(prompt, /human-readable field strictly in English/);
+  assert.match(prompt, /ordinary implementation work attaches to an existing responsibility/);
+  assert.match(prompt, /independently understandable logical block in an important system flow/);
 });

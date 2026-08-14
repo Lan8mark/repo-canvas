@@ -1,9 +1,20 @@
+import { rmSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+function cleanGeneratedAssets() {
+  return {
+    name: "repo-canvas-clean-generated-assets",
+    apply: "build",
+    buildStart() {
+      rmSync(new URL("./public/assets/", import.meta.url), { recursive: true, force: true });
+    },
+  };
+}
+
 export default defineConfig({
   root: "frontend",
-  plugins: [react()],
+  plugins: [cleanGeneratedAssets(), react()],
   build: {
     outDir: "../public",
     emptyOutDir: false,

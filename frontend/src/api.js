@@ -42,5 +42,6 @@ export const canvasApi = {
   saveSemantics: (canvasRevision, id, role, weight) => api("/api/semantics", { method: "POST", body: JSON.stringify({ canvasRevision, id, role, weight }) }),
   openWork: (canvasRevision, workId) => api("/api/sessions/open", { method: "POST", body: JSON.stringify({ canvasRevision, workId }) }),
   regenerate: () => api("/api/architect/refresh", { method: "POST", body: "{}" }),
+  switchLanguage: (language) => api("/api/language", { method: "POST", body: JSON.stringify({ language }) }),
   applyUpdate: () => api("/api/update/apply", { method: "POST", body: "{}" }),
 };

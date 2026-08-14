@@ -109,6 +109,8 @@ export function validateEvent(event) {
     optionalString(errors, payload.goal, "payload.goal", 2000);
     optionalString(errors, payload.solution, "payload.solution", 2000);
     optionalString(errors, payload.ownerTitle, "payload.ownerTitle", 240);
+    optionalString(errors, payload.ownerTitleRu, "payload.ownerTitleRu", 240);
+    optionalString(errors, payload.ownerTitleEn, "payload.ownerTitleEn", 240);
     optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
     for (const field of ["x", "y", "width", "height", "order"]) {
       if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
@@ -129,6 +131,8 @@ export function validateEvent(event) {
     optionalString(errors, payload.solution, "payload.solution", 2000);
     optionalString(errors, payload.mechanism, "payload.mechanism", 3000);
     optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
+    optionalString(errors, payload.ownerLabelRu, "payload.ownerLabelRu", 240);
+    optionalString(errors, payload.ownerLabelEn, "payload.ownerLabelEn", 240);
     optionalString(errors, payload.role, "payload.role", 16);
     optionalString(errors, payload.ownerRole, "payload.ownerRole", 16);
     optionalString(errors, payload.parentId, "payload.parentId", 128);
@@ -153,6 +157,8 @@ export function validateEvent(event) {
     optionalString(errors, payload.label, "payload.label", 240);
     optionalString(errors, payload.technical, "payload.technical", 1000);
     optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
+    optionalString(errors, payload.ownerLabelRu, "payload.ownerLabelRu", 240);
+    optionalString(errors, payload.ownerLabelEn, "payload.ownerLabelEn", 240);
     if (!new Set(["existing", "planned"]).has(payload.status)) errors.push(`payload.status has unsupported value '${String(payload.status)}'`);
   } else if (event.type === "relation.remove") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });

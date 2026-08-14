@@ -36,6 +36,7 @@ The server opens the protected loopback URL in your default browser. Keep that f
 - collapsible project sections, full-map reset and an in-canvas legend;
 - draggable areas and nodes with saved layout;
 - owner-controlled names for areas, entities and relations by double-clicking their labels;
+- a strict Russian/English switch that regenerates the semantic map in the selected language;
 - distinct header controls for reloading current Canvas data and regenerating the semantic map with Architect;
 - a local Update button that appears only when a newer verified release is available;
 - direct navigation back to Codex App or an exact Codex, Claude Code or Kimi Code CLI resume command.
@@ -44,7 +45,9 @@ The data model has no fixed entity cap. One Canvas can hold a small project or a
 
 ## How it works
 
-`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect first inventories public goals, pipelines, stores, models and runtimes; then builds the product spine; then audits the result independently. Every node maps a pragmatic goal to a real technical solution and cites implementation evidence. Deterministic coverage gates reject missing fundamental systems and broken main flows. Refresh omissions never delete existing concepts.
+`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect makes one reason-first structural pass over the repository: it identifies product boundaries and human reasons, follows the primary end-to-end flows, separates them into major logical blocks with distinct contracts, state, transformations or decisions, and only then verifies the structure against implementation evidence. Stores, models, workers, adapters, validators and framework layers remain implementation details unless they reveal an independently understandable architectural boundary. A refresh evolves the existing map as durable architectural memory: valid concepts and ids survive, new evidence may update, add, split or merge them, and omission alone never deletes anything.
+
+Canvas language is an explicit runtime setting: `ru` or `en`. Architect and Observer must produce all human-facing text in that language and never infer it from source files or previous map content.
 
 When the Canvas server is running, Observer watches public local session journals for this repository. It creates a provisional card on the first observed turn event, then uses `gpt-5.4-mini` to classify small event deltas and attach the work to the map. On completion, Observer updates affected passports and relations when the session contains enough evidence.
 

@@ -177,10 +177,10 @@ test("architect rejects relations to entities removed by the same refresh", () =
     relations: [{ id: "bad", from: "legacy", to: "legacy", label: "self", status: "existing" }],
     removedAreaIds: [], removedEntityIds: ["legacy"], removedRelationIds: [],
     removals: [{ kind: "entity", id: "legacy", replacementId: "", evidence: ["src/legacy removed"], reason: "Implementation was removed from production code." }],
-  }), /Unknown relation endpoint/);
+  }, store.getSnapshot(), { refresh: true }), /Unknown relation endpoint/);
 });
 
-test("architect refresh preserves concepts omitted from its response", () => {
+test("architect refresh preserves omissions and removes only explicit concepts", () => {
   emit("area.upsert", { id: "stale-area", title: "Stale", note: "", order: 9 });
   emit("entity.upsert", {
     id: "stale-entity", areaId: "stale-area", label: "Stale", status: "operational",
@@ -213,9 +213,17 @@ test("architect refresh preserves concepts omitted from its response", () => {
     removedAreaIds: [], removedEntityIds: [], removedRelationIds: [], removals: [],
   };
 
-  const events = semantic.architectureEvents(value, { refresh: true });
-  assert.ok(!events.some((event) => event.type === "entity.remove" && event.payload.id === "stale-entity"));
-  assert.ok(!events.some((event) => event.type === "area.remove" && event.payload.id === "stale-area"));
+  const preservedEvents = semantic.architectureEvents(value, { refresh: true });
+  assert.ok(!preservedEvents.some((event) => event.type === "entity.remove" && event.payload.id === "stale-entity"));
+  assert.ok(!preservedEvents.some((event) => event.type === "area.remove" && event.payload.id === "stale-area"));
+
+  const removedEvents = semantic.architectureEvents({
+    ...value,
+    removedAreaIds: ["stale-area"],
+    removedEntityIds: [],
+    removedRelationIds: [],
+  }, { refresh: true });
+  assert.ok(removedEvents.some((event) => event.type === "area.remove" && event.payload.id === "stale-area"));
 });
 
 test("completed observer work may remain provisional when no semantic target was established", () => {

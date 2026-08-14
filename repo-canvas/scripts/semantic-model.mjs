@@ -2,6 +2,7 @@ import { appendEvents, createEvent, getSnapshot } from "./canvas-store.mjs";
 
 const id = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:>\\-]{0,127}$" };
 const stringArray = { type: "array", items: { type: "string" } };
+const idArray = { type: "array", items: id, uniqueItems: true };
 const shortName = { type: "string", minLength: 2, maxLength: 56 };
 const logicalSentence = { type: "string", minLength: 24, maxLength: 220 };
 const mechanismSentence = { type: "string", minLength: 24, maxLength: 320 };
@@ -46,17 +47,6 @@ const relationSchema = {
   },
   required: ["id", "from", "to", "label", "technical", "status"],
 };
-const removalSchema = {
-  type: "object", additionalProperties: false,
-  properties: {
-    kind: { type: "string", enum: ["area", "entity", "relation"] },
-    id, replacementId: { type: "string", maxLength: 128 },
-    evidence: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 3, maxLength: 1000 } },
-    reason: { type: "string", minLength: 16, maxLength: 240 },
-  },
-  required: ["kind", "id", "replacementId", "evidence", "reason"],
-};
-
 export const ARCHITECT_OUTPUT_SCHEMA = {
   type: "object", additionalProperties: false,
   properties: {
@@ -64,12 +54,11 @@ export const ARCHITECT_OUTPUT_SCHEMA = {
     areas: { type: "array", items: areaSchema },
     entities: { type: "array", items: entitySchema },
     relations: { type: "array", items: relationSchema },
-    removedAreaIds: { type: "array", items: id },
-    removedEntityIds: { type: "array", items: id },
-    removedRelationIds: { type: "array", items: id },
-    removals: { type: "array", items: removalSchema },
+    removedAreaIds: idArray,
+    removedEntityIds: idArray,
+    removedRelationIds: idArray,
   },
-  required: ["projectTitle", "projectSummary", "areas", "entities", "relations", "removedAreaIds", "removedEntityIds", "removedRelationIds", "removals"],
+  required: ["projectTitle", "projectSummary", "areas", "entities", "relations", "removedAreaIds", "removedEntityIds", "removedRelationIds"],
 };
 
 const entityChangeSchema = {
@@ -160,26 +149,29 @@ export function validateArchitecture(value, snapshot = getSnapshot(), { refresh 
     throw new Error("Architect response is missing semantic arrays");
   }
   uniqueIds(value.areas, "id"); uniqueIds(value.entities, "id"); uniqueIds(value.relations, "id");
+  const removedAreaIds = new Set(value.removedAreaIds || []);
+  const removedEntityIds = new Set(value.removedEntityIds || []);
+  const removedRelationIds = new Set(value.removedRelationIds || []);
+  if (!refresh && (removedAreaIds.size || removedEntityIds.size || removedRelationIds.size)) {
+    throw new Error("Architect removals are only valid during refresh");
+  }
+  for (const area of value.areas) if (removedAreaIds.has(area.id)) throw new Error(`Area '${area.id}' cannot be upserted and removed together`);
+  for (const entity of value.entities) if (removedEntityIds.has(entity.id)) throw new Error(`Entity '${entity.id}' cannot be upserted and removed together`);
+  for (const relation of value.relations) if (removedRelationIds.has(relation.id)) throw new Error(`Relation '${relation.id}' cannot be upserted and removed together`);
   for (const entity of value.entities) if ((entity.ownerRole || entity.role || "core") === "core") entity.parentId = "";
-  const removals = value.removals || [];
-  const removedAreas = new Set(removals.filter((item) => item.kind === "area").map((item) => item.id));
-  const removedEntities = new Set(removals.filter((item) => item.kind === "entity").map((item) => item.id));
-  const areaIds = new Set([
-    ...snapshot.areas.filter((item) => !removedAreas.has(item.id)).map((item) => item.id),
-    ...value.areas.map((item) => item.id),
-  ]);
-  const entityIds = new Set([
-    ...snapshot.entities
-      .filter((item) => !removedEntities.has(item.id) && !removedAreas.has(item.areaId))
-      .map((item) => item.id),
-    ...value.entities.map((item) => item.id),
-  ]);
+  const areaIds = new Set(snapshot.areas.map((item) => item.id).filter((itemId) => !removedAreaIds.has(itemId)));
+  for (const area of value.areas) areaIds.add(area.id);
+  const removedByArea = new Set(snapshot.entities.filter((item) => removedAreaIds.has(item.areaId)).map((item) => item.id));
+  const entityIds = new Set(snapshot.entities.map((item) => item.id)
+    .filter((itemId) => !removedEntityIds.has(itemId) && !removedByArea.has(itemId)));
+  for (const entity of value.entities) entityIds.add(entity.id);
   for (const entity of value.entities) if (!areaIds.has(entity.areaId)) throw new Error(`Unknown entity area '${entity.areaId}'`);
   const returnedEntities = new Map(value.entities.map((entity) => [entity.id, entity]));
   for (const entity of value.entities) {
     const semanticRole = entity.role || "core";
     if (semanticRole !== "core") {
-      const parent = returnedEntities.get(entity.parentId) || snapshot.entities.find((item) => item.id === entity.parentId);
+      const parent = returnedEntities.get(entity.parentId)
+        || (entityIds.has(entity.parentId) && snapshot.entities.find((item) => item.id === entity.parentId));
       if (!parent) throw new Error(`entity '${entity.id}' must point to a real parent`);
       if ((parent.ownerRole || parent.role || "core") === "detail" && semanticRole === "support") throw new Error(`support entity '${entity.id}' cannot be nested under detail`);
     }
@@ -190,7 +182,8 @@ export function validateArchitecture(value, snapshot = getSnapshot(), { refresh 
     while (parentId) {
       if (seen.has(parentId)) throw new Error(`semantic hierarchy contains a cycle at '${entity.id}'`);
       seen.add(parentId);
-      parentId = (returnedEntities.get(parentId) || snapshot.entities.find((item) => item.id === parentId))?.parentId || "";
+      parentId = (returnedEntities.get(parentId)
+        || (entityIds.has(parentId) && snapshot.entities.find((item) => item.id === parentId)))?.parentId || "";
     }
   }
   for (const relation of value.relations) {
@@ -204,22 +197,14 @@ export function architectureEvents(value, { actor = "architect", refresh = false
   const snapshot = getSnapshot();
   validateArchitecture(value, snapshot, { refresh });
   const events = [];
+  if (refresh) {
+    for (const id of value.removedRelationIds || []) events.push(createEvent("relation.remove", { actor, payload: { id, reason: "Explicitly retired by Architect" } }));
+    for (const id of value.removedEntityIds || []) events.push(createEvent("entity.remove", { actor, payload: { id, reason: "Explicitly retired by Architect" } }));
+    for (const id of value.removedAreaIds || []) events.push(createEvent("area.remove", { actor, payload: { id, reason: "Explicitly retired by Architect" } }));
+  }
   for (const area of value.areas) events.push(createEvent("area.upsert", { actor, payload: area }));
   for (const entity of value.entities) events.push(createEvent("entity.upsert", { actor, payload: entity }));
   for (const relation of value.relations) events.push(createEvent("relation.upsert", { actor, payload: relation }));
-  if (refresh) {
-    const returnedAreas = new Set(value.areas.map((item) => item.id));
-    const returnedEntities = new Set(value.entities.map((item) => item.id));
-    const returnedRelations = new Set(value.relations.map((item) => item.id));
-    // Omission is never deletion. The architect must explicitly name removed concepts.
-    const approvedRemovals = value.removals || [];
-    const staleRelations = new Set(approvedRemovals.filter((item) => item.kind === "relation").map((item) => item.id));
-    const staleEntities = new Set(approvedRemovals.filter((item) => item.kind === "entity").map((item) => item.id));
-    const staleAreas = new Set(approvedRemovals.filter((item) => item.kind === "area").map((item) => item.id));
-    for (const id of staleRelations) events.push(createEvent("relation.remove", { actor, payload: { id, reason: "Absent from complete architect refresh" } }));
-    for (const id of staleEntities) events.push(createEvent("entity.remove", { actor, payload: { id, reason: "Absent from complete architect refresh" } }));
-    for (const id of staleAreas) events.push(createEvent("area.remove", { actor, payload: { id, reason: "Absent from complete architect refresh" } }));
-  }
   return events;
 }
 

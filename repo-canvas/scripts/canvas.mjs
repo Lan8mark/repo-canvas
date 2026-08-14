@@ -99,6 +99,7 @@ Commands:
 Global options:
   --root <path>  Explicit repository root
   --port <port>  Server port for start (default 4173)
+  --language <ru|en>  Strict UI and generated-map language
   --no-open      Do not open the Canvas in the default browser
 
 Examples:
@@ -152,6 +153,7 @@ if (args.root === true) {
         refresh: Boolean(args.refresh),
         model: args.model && args.model !== true ? String(args.model) : undefined,
         effort: args.effort && args.effort !== true ? String(args.effort) : undefined,
+        language: args.language && args.language !== true ? String(args.language) : undefined,
       });
       console.log(JSON.stringify(result, null, 2));
     } else if (command === "setup") {
@@ -159,16 +161,19 @@ if (args.root === true) {
       const { probeCodex } = await import("./model-runtime.mjs");
       const { runArchitect } = await import("./architect.mjs");
       const { getSnapshot } = await import("./canvas-store.mjs");
-      const { writeRuntimeConfig } = await import("./runtime-config.mjs");
+      const { normalizeLanguage, writeRuntimeConfig } = await import("./runtime-config.mjs");
       runInit();
       const probe = await probeCodex({ cwd: process.env.REPO_CANVAS_ROOT || process.cwd() });
       if (probe.status !== "connected") throw new Error(`Codex subscription is not available: ${probe.error || "probe failed"}`);
+      const language = args.language && args.language !== true ? normalizeLanguage(String(args.language)) : undefined;
+      if (language) writeRuntimeConfig({ language });
       let architect = null;
       if (!getSnapshot().semantic || args.refresh) {
         architect = await runArchitect({
           refresh: Boolean(args.refresh),
           model: args.model && args.model !== true ? String(args.model) : undefined,
           effort: args.effort && args.effort !== true ? String(args.effort) : undefined,
+          language,
         });
       }
       const observer = writeRuntimeConfig({ enabled: true, providers: ["codex", "claude", "kimi"] });

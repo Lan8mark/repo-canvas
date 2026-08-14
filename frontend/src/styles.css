@@ -32,6 +32,7 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 :root:root{background:#cec6be;--panel:#eae3db;--line:#c6b8ac;--muted:#74675e}
 .app-shell.app-shell{background:linear-gradient(135deg,#cec5bc,#d8d0c8)}
 .topbar.topbar{background:#eee8e1;border-color:#bfb2a7;box-shadow:0 12px 38px rgba(55,42,32,.12)}
+.language-switch{display:flex;padding:3px;border:1px solid #bcaea2;border-radius:11px;background:#d7cec5}.language-switch button{width:30px;height:25px;padding:0;border:0;border-radius:8px;background:transparent;color:#74675e;font:700 8px "JetBrains Mono";cursor:pointer}.language-switch button.is-active{background:#f3e9df;color:#9b4b25;box-shadow:0 2px 7px rgba(67,48,35,.12)}.language-switch button:disabled{cursor:wait;opacity:.55}
 .navigation-rail.navigation-rail,.inspector.inspector{background:#e8e0d8;border-color:#bfb2a7;box-shadow:0 12px 38px rgba(55,42,32,.12)}
 .canvas-panel.canvas-panel{background:#d9d1c8;border-color:#b7aa9f;box-shadow:0 12px 38px rgba(55,42,32,.14)}
 .canvas-toolbar.canvas-toolbar{background:#e9e2da;border-color:#c2b5aa}
@@ -42,10 +43,6 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .entity-node.entity-node:hover{background:#f7f1e9;box-shadow:0 16px 34px rgba(52,74,64,.22)}
 .canvas-toolbar.canvas-toolbar button,.navigation-rail.navigation-rail>header button,.inspector.inspector footer button{background:#ddd4cb;border-color:#bcaea2;box-shadow:none}
 .canvas-toolbar.canvas-toolbar button:hover,.navigation-rail.navigation-rail>header button:hover,.inspector.inspector footer button:hover{background:#d3c7bc}
-.canvas-toolbar .layout-lock{min-width:91px;background:#d4cbc2}
-.canvas-toolbar .layout-lock.is-unlocked{background:#e9b18f;border-color:#c87546;color:#5f321d}
-.workspace.workspace:not(.is-layout-unlocked) .area-node>header{cursor:default}
-.workspace.workspace.is-layout-unlocked .area-node>header,.workspace.workspace.is-layout-unlocked .entity-node{cursor:grab}
 .project-tree.project-tree summary:hover,.project-tree details>button:hover{background:#dcd2c8}
 .project-tree details>button.is-active{background:#efc7ae;color:#342e2a}
 .inspector.inspector section>button{background:#dcd3ca;border:1px solid #c8bbb0}
@@ -127,7 +124,7 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 /* Product hierarchy: the architecture spine leads, implementation recedes. */
 .entity-node.role-core{border-width:2px;background:#f5eee5;box-shadow:0 calc(10px + 9px * var(--importance,.8)) calc(24px + 18px * var(--importance,.8)) rgba(52,74,64,.2)}
 .entity-node.role-core>strong{font-size:17px;line-height:1.22}
-.entity-node.role-core .entity-status::after{content:"ОСНОВА";margin-left:7px;padding:3px 6px;border-radius:999px;background:#d9e8df;color:#347458;font:600 6px "JetBrains Mono"}
+.entity-node.role-core .entity-status::after{content:attr(data-role-label);margin-left:7px;padding:3px 6px;border-radius:999px;background:#d9e8df;color:#347458;font:600 6px "JetBrains Mono"}
 .entity-node.role-support{background:#eee7df;border-color:rgba(83,133,111,.42);box-shadow:0 9px 20px rgba(52,74,64,.1)}
 .entity-node.role-support>strong{font-size:13px}
 .entity-node.role-detail{background:#e6dfd8;border-style:dashed;border-color:#b8aaa0;box-shadow:none;opacity:.88}
@@ -138,3 +135,26 @@ button:focus-visible,input:focus-visible{outline:2px solid #e77d42;outline-offse
 .semantic-role>div{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .semantic-role button{border:1px solid #c2b4a9;border-radius:8px;background:#e8e0d8;padding:7px 4px;font-size:8px;cursor:pointer}
 .semantic-role button.is-active{background:#efc7ae;border-color:#d28a5d;color:#713b20}
+
+/* The map toolbar exposes only semantic scope and the few whole-map actions. */
+.canvas-toolbar.canvas-toolbar nav{gap:3px}
+.canvas-toolbar.canvas-toolbar .toolbar-action{
+  height:28px;
+  padding:0 9px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  box-shadow:none;
+  color:#695d54;
+}
+.canvas-toolbar.canvas-toolbar .toolbar-action:hover{background:#d7cec5}
+.canvas-toolbar.canvas-toolbar .regenerate{padding:0 10px}
+.workspace:not(.is-focus-mode) .area-node>header,.workspace:not(.is-focus-mode) .entity-node{cursor:grab}
+
+/* Keep viewport interaction on the compositor and make semantic focus feel immediate. */
+.topbar,.navigation-rail,.canvas-panel,.inspector,.focus-toolbar{backdrop-filter:none}
+.workspace{transition-duration:.12s}
+.inspector{transition-duration:.12s}
+.workspace .navigation-rail{transition-duration:.1s}
+.react-flow__node,.react-flow .react-flow__edge,.react-flow .edge-label,.area-link-label{transition-duration:.08s}
+.entity-node{transition:opacity .08s,box-shadow .08s,border-color .08s}
