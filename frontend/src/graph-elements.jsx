@@ -101,7 +101,11 @@ export const WorkNode = memo(function WorkNode({ data, selected }) {
 });
 
 export const SemanticEdge = memo(function SemanticEdge(props) {
-  const { path, labelX, labelY, labelWidth } = orthogonalRelationPath({ ...props, label: props.label });
+  const { path, labelX, labelY, labelWidth } = orthogonalRelationPath({
+    ...props,
+    label: props.label,
+    obstacles: props.data?.obstacles || [],
+  });
   const active = props.data?.focused;
   return (
     <>

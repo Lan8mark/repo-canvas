@@ -205,33 +205,58 @@ export default function App() {
       placeColumn(right, anchor.x + columnOffset, centerY, nodeById);
     }
 
+    const displayNodes = nodes.map((node) => {
+      const entityId = node.type === "entity" ? node.id : null;
+      const workId = node.type === "work" ? node.id.slice(5) : null;
+      const work = workId ? snapshot.work.find((item) => item.id === workId) : null;
+      const workVisible = work?.targets?.some((id) => visible.has(id));
+      const focusPosition = entityId ? focusPositions.get(entityId) : null;
+      return {
+        ...node,
+        ...(focusPosition ? {
+          parentId: undefined,
+          extent: undefined,
+          position: focusPosition,
+          draggable: false,
+          zIndex: 8,
+        } : { draggable: !hasFocus }),
+        data: {
+          ...node.data,
+          focused: entityId === selectedId,
+          activeWork: entityId ? activeIds.has(entityId) : false,
+          layer: informationLayer,
+          showAreaContext: Boolean(hasFocus && entityId && visible.has(entityId)),
+          focusedRelationIds: hasFocus ? focusedRelationIds : null,
+          dimmed: hasFocus && (entityId ? !visible.has(entityId) : workId ? !workVisible : node.type === "area"),
+        },
+      };
+    });
+    const displayNodeById = new Map(displayNodes.map((node) => [node.id, node]));
+    const absolutePosition = (node) => {
+      const position = { x: Number(node.position?.x || 0), y: Number(node.position?.y || 0) };
+      let parentId = node.parentId;
+      while (parentId) {
+        const parent = displayNodeById.get(parentId);
+        if (!parent) break;
+        position.x += Number(parent.position?.x || 0);
+        position.y += Number(parent.position?.y || 0);
+        parentId = parent.parentId;
+      }
+      return position;
+    };
+    const obstacleRects = displayNodes.filter((node) => node.type === "entity" && !node.data?.dimmed).map((node) => {
+      const position = absolutePosition(node);
+      return {
+        id: node.id,
+        x: position.x,
+        y: position.y,
+        width: Number(node.measured?.width || node.width || node.style?.width || 0),
+        height: Number(node.measured?.height || node.height || node.style?.height || 0),
+      };
+    }).filter((rectangle) => rectangle.width > 0 && rectangle.height > 0);
+
     return {
-      nodes: nodes.map((node) => {
-        const entityId = node.type === "entity" ? node.id : null;
-        const workId = node.type === "work" ? node.id.slice(5) : null;
-        const work = workId ? snapshot.work.find((item) => item.id === workId) : null;
-        const workVisible = work?.targets?.some((id) => visible.has(id));
-        const focusPosition = entityId ? focusPositions.get(entityId) : null;
-        return {
-          ...node,
-          ...(focusPosition ? {
-            parentId: undefined,
-            extent: undefined,
-            position: focusPosition,
-            draggable: false,
-            zIndex: 8,
-          } : { draggable: !hasFocus }),
-          data: {
-            ...node.data,
-            focused: entityId === selectedId,
-            activeWork: entityId ? activeIds.has(entityId) : false,
-            layer: informationLayer,
-            showAreaContext: Boolean(hasFocus && entityId && visible.has(entityId)),
-            focusedRelationIds: hasFocus ? focusedRelationIds : null,
-            dimmed: hasFocus && (entityId ? !visible.has(entityId) : workId ? !workVisible : node.type === "area"),
-          },
-        };
-      }),
+      nodes: displayNodes,
       edges: edges.map((edge) => {
         const focused = focusedRelations.has(edge.id);
         return {
@@ -242,6 +267,9 @@ export default function App() {
             ...edge.data,
             focused,
             dimmed: hasFocus && !focused,
+            obstacles: edge.type === "semantic"
+              ? obstacleRects.filter((rectangle) => rectangle.id !== edge.source && rectangle.id !== edge.target)
+              : undefined,
             onRename: edge.data?.relation && informationLayer === "logic"
               ? () => setRename({ kind: "relation", id: edge.data.relation.id, value: relationText(edge.data.relation, "logic", language) })
               : undefined,

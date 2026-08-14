@@ -74,6 +74,53 @@ test("focused relation routing reserves a straight caption runway", () => {
   assert.equal(route.labelY, 160);
 });
 
+function segmentCrossesRectangle(from, to, rectangle) {
+  if (from.y === to.y) {
+    return from.y > rectangle.y && from.y < rectangle.y + rectangle.height
+      && Math.max(from.x, to.x) > rectangle.x && Math.min(from.x, to.x) < rectangle.x + rectangle.width;
+  }
+  return from.x > rectangle.x && from.x < rectangle.x + rectangle.width
+    && Math.max(from.y, to.y) > rectangle.y && Math.min(from.y, to.y) < rectangle.y + rectangle.height;
+}
+
+test("semantic relation routing detours around unrelated cards", () => {
+  const obstacle = { x: 190, y: 40, width: 120, height: 120 };
+  const route = orthogonalRelationPath({
+    sourceX: 0,
+    sourceY: 100,
+    targetX: 500,
+    targetY: 100,
+    label: "cross-card relation",
+    obstacles: [obstacle],
+  });
+
+  assert.ok(route.points.length > 2);
+  for (let index = 1; index < route.points.length; index += 1) {
+    assert.equal(segmentCrossesRectangle(route.points[index - 1], route.points[index], obstacle), false);
+  }
+});
+
+test("semantic relation routing clears multiple staggered cards", () => {
+  const obstacles = [
+    { x: 150, y: 40, width: 90, height: 120 },
+    { x: 285, y: -40, width: 90, height: 120 },
+  ];
+  const route = orthogonalRelationPath({
+    sourceX: 0,
+    sourceY: 100,
+    targetX: 520,
+    targetY: 20,
+    label: "multi-card relation",
+    obstacles,
+  });
+
+  for (let index = 1; index < route.points.length; index += 1) {
+    for (const obstacle of obstacles) {
+      assert.equal(segmentCrossesRectangle(route.points[index - 1], route.points[index], obstacle), false);
+    }
+  }
+});
+
 test("entity cards grow with complete narrative copy", () => {
   const short = entityContentHeight({ label: "Short", problem: "Short problem", solution: "Short solution" });
   const long = entityContentHeight({
