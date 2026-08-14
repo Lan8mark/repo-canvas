@@ -10,24 +10,31 @@ const invariantArray = {
   items: { type: "string", minLength: 8, maxLength: 180 },
 };
 const boundaryArray = { type: "array", maxItems: 3, items: { type: "string", maxLength: 120 } };
+const evidenceArray = {
+  type: "array", minItems: 1, maxItems: 8,
+  items: { type: "string", minLength: 3, maxLength: 1000 },
+};
+const role = { type: "string", enum: ["core", "support", "detail"] };
 
 const areaSchema = {
   type: "object", additionalProperties: false,
   properties: {
-    id, title: shortName, problem: logicalSentence, solution: logicalSentence, order: { type: "number" },
+    id, title: shortName, goal: logicalSentence, solution: logicalSentence, order: { type: "number" },
   },
-  required: ["id", "title", "problem", "solution", "order"],
+  required: ["id", "title", "goal", "solution", "order"],
 };
 const entitySchema = {
   type: "object", additionalProperties: false,
   properties: {
-    id, areaId: id, label: shortName,
+    id, areaId: id, label: shortName, role,
+    parentId: { type: "string", maxLength: 128 }, weight: { type: "number", minimum: 1, maximum: 100 },
     status: { type: "string", enum: ["operational", "disabled", "problem", "planned"] },
-    path: { type: "string", maxLength: 1000 }, problem: logicalSentence, solution: logicalSentence,
+    path: { type: "string", maxLength: 1000 }, goal: logicalSentence, solution: logicalSentence,
     mechanism: mechanismSentence, invariants: invariantArray,
-    inputs: boundaryArray, outputs: boundaryArray, dependsOn: { type: "array", items: id }, order: { type: "number" },
+    inputs: boundaryArray, outputs: boundaryArray, dependsOn: { type: "array", items: id }, evidence: evidenceArray,
+    covers: { type: "array", minItems: 1, maxItems: 12, items: id }, order: { type: "number" },
   },
-  required: ["id", "areaId", "label", "status", "path", "problem", "solution", "mechanism", "invariants", "inputs", "outputs", "dependsOn", "order"],
+  required: ["id", "areaId", "label", "role", "parentId", "weight", "status", "path", "goal", "solution", "mechanism", "invariants", "inputs", "outputs", "dependsOn", "evidence", "covers", "order"],
 };
 const relationSchema = {
   type: "object", additionalProperties: false,
@@ -38,6 +45,16 @@ const relationSchema = {
     status: { type: "string", enum: ["existing", "planned"] },
   },
   required: ["id", "from", "to", "label", "technical", "status"],
+};
+const removalSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    kind: { type: "string", enum: ["area", "entity", "relation"] },
+    id, replacementId: { type: "string", maxLength: 128 },
+    evidence: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 3, maxLength: 1000 } },
+    reason: { type: "string", minLength: 16, maxLength: 240 },
+  },
+  required: ["kind", "id", "replacementId", "evidence", "reason"],
 };
 
 export const ARCHITECT_OUTPUT_SCHEMA = {
@@ -50,8 +67,9 @@ export const ARCHITECT_OUTPUT_SCHEMA = {
     removedAreaIds: { type: "array", items: id },
     removedEntityIds: { type: "array", items: id },
     removedRelationIds: { type: "array", items: id },
+    removals: { type: "array", items: removalSchema },
   },
-  required: ["projectTitle", "projectSummary", "areas", "entities", "relations", "removedAreaIds", "removedEntityIds", "removedRelationIds"],
+  required: ["projectTitle", "projectSummary", "areas", "entities", "relations", "removedAreaIds", "removedEntityIds", "removedRelationIds", "removals"],
 };
 
 const entityChangeSchema = {
@@ -102,13 +120,13 @@ function requireNarrative(value, field, { min = 16, max = 280 } = {}) {
 export function validateNarrativeQuality(value) {
   for (const area of value.areas || []) {
     requireNarrative(area.title, `area '${area.id}' title`, { min: 2, max: 56 });
-    requireNarrative(area.problem, `area '${area.id}' problem`, { min: 24, max: 220 });
+    requireNarrative(area.goal || area.problem, `area '${area.id}' goal`, { min: 24, max: 220 });
     requireNarrative(area.solution, `area '${area.id}' solution`, { min: 24, max: 220 });
   }
   for (const entity of value.entities || []) {
     requireNarrative(entity.label, `entity '${entity.id}' label`, { min: 2, max: 56 });
     if (entity.label.trim().split(/\s+/).length > 6) throw new Error(`entity '${entity.id}' label is too explanatory; move detail into solution`);
-    requireNarrative(entity.problem, `entity '${entity.id}' problem`, { min: 24, max: 220 });
+    requireNarrative(entity.goal || entity.problem, `entity '${entity.id}' goal`, { min: 24, max: 220 });
     requireNarrative(entity.solution, `entity '${entity.id}' solution`, { min: 24, max: 220 });
     requireNarrative(entity.mechanism, `entity '${entity.id}' mechanism`, { min: 24, max: 320 });
     if (!Array.isArray(entity.invariants) || entity.invariants.length < 1 || entity.invariants.length > 3) {
@@ -118,6 +136,11 @@ export function validateNarrativeQuality(value) {
     if ((entity.inputs || []).length > 3 || (entity.outputs || []).length > 3) {
       throw new Error(`entity '${entity.id}' may expose at most 3 boundary-defining inputs and outputs`);
     }
+    const semanticRole = entity.role || "core";
+    const semanticWeight = entity.weight ?? (semanticRole === "core" ? 80 : semanticRole === "support" ? 50 : 20);
+    if (!["core", "support", "detail"].includes(semanticRole)) throw new Error(`entity '${entity.id}' must declare core, support or detail role`);
+    if (!Number.isFinite(semanticWeight) || semanticWeight < 1 || semanticWeight > 100) throw new Error(`entity '${entity.id}' must declare weight 1-100`);
+    if ((!Array.isArray(entity.evidence) || !entity.evidence.length) && !entity.path) throw new Error(`entity '${entity.id}' must cite implementation evidence`);
   }
   for (const relation of value.relations || []) {
     requireNarrative(relation.label, `relation '${relation.id}' logical label`, { min: 3, max: 64 });
@@ -137,19 +160,39 @@ export function validateArchitecture(value, snapshot = getSnapshot(), { refresh 
     throw new Error("Architect response is missing semantic arrays");
   }
   uniqueIds(value.areas, "id"); uniqueIds(value.entities, "id"); uniqueIds(value.relations, "id");
-  const removedAreas = new Set(value.removedAreaIds || []);
-  const removedEntities = new Set(value.removedEntityIds || []);
-  const areaIds = new Set(refresh ? value.areas.map((item) => item.id) : [
+  for (const entity of value.entities) if ((entity.ownerRole || entity.role || "core") === "core") entity.parentId = "";
+  const removals = value.removals || [];
+  const removedAreas = new Set(removals.filter((item) => item.kind === "area").map((item) => item.id));
+  const removedEntities = new Set(removals.filter((item) => item.kind === "entity").map((item) => item.id));
+  const areaIds = new Set([
     ...snapshot.areas.filter((item) => !removedAreas.has(item.id)).map((item) => item.id),
     ...value.areas.map((item) => item.id),
   ]);
-  const entityIds = new Set(refresh ? value.entities.map((item) => item.id) : [
+  const entityIds = new Set([
     ...snapshot.entities
       .filter((item) => !removedEntities.has(item.id) && !removedAreas.has(item.areaId))
       .map((item) => item.id),
     ...value.entities.map((item) => item.id),
   ]);
   for (const entity of value.entities) if (!areaIds.has(entity.areaId)) throw new Error(`Unknown entity area '${entity.areaId}'`);
+  const returnedEntities = new Map(value.entities.map((entity) => [entity.id, entity]));
+  for (const entity of value.entities) {
+    const semanticRole = entity.role || "core";
+    if (semanticRole !== "core") {
+      const parent = returnedEntities.get(entity.parentId) || snapshot.entities.find((item) => item.id === entity.parentId);
+      if (!parent) throw new Error(`entity '${entity.id}' must point to a real parent`);
+      if ((parent.ownerRole || parent.role || "core") === "detail" && semanticRole === "support") throw new Error(`support entity '${entity.id}' cannot be nested under detail`);
+    }
+  }
+  for (const entity of value.entities) {
+    const seen = new Set([entity.id]);
+    let parentId = entity.parentId;
+    while (parentId) {
+      if (seen.has(parentId)) throw new Error(`semantic hierarchy contains a cycle at '${entity.id}'`);
+      seen.add(parentId);
+      parentId = (returnedEntities.get(parentId) || snapshot.entities.find((item) => item.id === parentId))?.parentId || "";
+    }
+  }
   for (const relation of value.relations) {
     if (!entityIds.has(relation.from) || !entityIds.has(relation.to)) throw new Error(`Unknown relation endpoint '${relation.id}'`);
   }
@@ -168,18 +211,11 @@ export function architectureEvents(value, { actor = "architect", refresh = false
     const returnedAreas = new Set(value.areas.map((item) => item.id));
     const returnedEntities = new Set(value.entities.map((item) => item.id));
     const returnedRelations = new Set(value.relations.map((item) => item.id));
-    const staleRelations = new Set([
-      ...(value.removedRelationIds || []),
-      ...snapshot.relations.filter((item) => !returnedRelations.has(item.id)).map((item) => item.id),
-    ]);
-    const staleEntities = new Set([
-      ...(value.removedEntityIds || []),
-      ...snapshot.entities.filter((item) => !returnedEntities.has(item.id)).map((item) => item.id),
-    ]);
-    const staleAreas = new Set([
-      ...(value.removedAreaIds || []),
-      ...snapshot.areas.filter((item) => !returnedAreas.has(item.id)).map((item) => item.id),
-    ]);
+    // Omission is never deletion. The architect must explicitly name removed concepts.
+    const approvedRemovals = value.removals || [];
+    const staleRelations = new Set(approvedRemovals.filter((item) => item.kind === "relation").map((item) => item.id));
+    const staleEntities = new Set(approvedRemovals.filter((item) => item.kind === "entity").map((item) => item.id));
+    const staleAreas = new Set(approvedRemovals.filter((item) => item.kind === "area").map((item) => item.id));
     for (const id of staleRelations) events.push(createEvent("relation.remove", { actor, payload: { id, reason: "Absent from complete architect refresh" } }));
     for (const id of staleEntities) events.push(createEvent("entity.remove", { actor, payload: { id, reason: "Absent from complete architect refresh" } }));
     for (const id of staleAreas) events.push(createEvent("area.remove", { actor, payload: { id, reason: "Absent from complete architect refresh" } }));
@@ -217,13 +253,17 @@ export function observerEvents(decision, context) {
       }));
       continue;
     }
+    const previous = existingEntities.get(change.entityId);
     upserts.push(createEvent("entity.upsert", {
       actor: "observer",
       payload: {
         id: change.entityId, areaId: change.areaId, label: change.label, status: change.status,
-        path: change.path, problem: change.problem, solution: change.solution,
+        path: change.path, goal: change.problem, problem: change.problem, solution: change.solution,
         mechanism: change.mechanism, invariants: change.invariants,
         inputs: change.inputs, outputs: change.outputs, dependsOn: change.dependsOn,
+        role: previous?.role || "detail", parentId: previous?.parentId || targets[0] || "",
+        weight: previous?.weight || 20, evidence: previous?.evidence || (change.path ? [change.path] : []),
+        covers: previous?.covers || [change.entityId],
       },
     }));
   }

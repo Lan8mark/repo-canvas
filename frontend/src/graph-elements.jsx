@@ -33,13 +33,16 @@ function Port({ side, port, index, total, active }) {
 export const EntityNode = memo(function EntityNode({ data, selected }) {
   const { entity, incoming = [], outgoing = [] } = data;
   const logical = data.layer !== "technical";
-  const problem = entity.problem || "Проблема этого блока пока не сформулирована.";
+  const goal = entity.goal || entity.problem || "Цель этого блока пока не сформулирована.";
   const solution = entity.solution || entity.purpose || "Роль блока пока не сформулирована.";
   const mechanism = entity.mechanism || entity.note || entity.purpose || "Технический механизм пока не описан.";
   return (
     <article
-      className={`entity-node status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""} ${data.showAreaContext ? "has-area-context" : ""}`}
-      style={data.showAreaContext ? { "--area-color": data.areaColor } : undefined}
+      className={`entity-node role-${data.role || "core"} status-${entity.status} ${selected || data.focused ? "is-focused" : ""} ${data.dimmed ? "is-dimmed" : ""} ${data.showAreaContext ? "has-area-context" : ""}`}
+      style={{
+        "--area-color": data.areaColor,
+        "--importance": Math.max(1, Math.min(100, Number(data.weight) || 50)) / 100,
+      }}
     >
       {incoming.map((port, index) => <Port key={port.id} side="in" port={port} index={index} total={incoming.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
       {outgoing.map((port, index) => <Port key={port.id} side="out" port={port} index={index} total={outgoing.length} active={!data.focusedRelationIds || data.focusedRelationIds.has(port.id)} />)}
@@ -52,7 +55,7 @@ export const EntityNode = memo(function EntityNode({ data, selected }) {
       </header>
       <strong>{data.label}</strong>
       {logical ? <div className="node-narrative">
-        <p className="node-problem"><b>Проблема</b><span>{problem}</span></p>
+        <p className="node-problem"><b>Цель</b><span>{goal}</span></p>
         <p className="node-solution"><b>Решение</b><span>{solution}</span></p>
       </div> : <div className="node-technical">
         <p>{mechanism}</p>
@@ -78,7 +81,7 @@ export const AreaNode = memo(function AreaNode({ data, selected }) {
         <span><small>ОБЛАСТЬ · {data.count}</small><strong>{data.label}</strong></span>
         <div className="area-copy">
           {logical ? <>
-            <p><b>Проблема</b>{data.area.problem || data.area.note}</p>
+            <p><b>Цель</b>{data.area.goal || data.area.problem || data.area.note}</p>
             {data.area.solution ? <p><b>Решение</b>{data.area.solution}</p> : null}
           </> : <p>{data.area.note || data.area.solution || "Техническая граница области"}</p>}
         </div>

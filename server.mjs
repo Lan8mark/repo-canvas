@@ -33,7 +33,10 @@ function publicArchitectState() {
 function startArchitectRefresh() {
   if (architectJob) return false;
   architectState = { status: "running", startedAt: new Date().toISOString(), finishedAt: null, result: null, error: null };
-  architectJob = runArchitect({ refresh: true })
+  architectJob = runArchitect({
+    refresh: true,
+    onProgress: (stage, detail = null) => { architectState = { ...architectState, stage, detail }; },
+  })
     .then((result) => {
       architectState = { ...architectState, status: "done", finishedAt: new Date().toISOString(), result, error: null };
     })
@@ -236,6 +239,25 @@ function saveRename(body) {
   return { revision: requestedRevision + 1, kind, id, value };
 }
 
+function saveSemantics(body) {
+  const requestedRevision = Number(body.canvasRevision);
+  const id = String(body.id || "").trim();
+  const role = String(body.role || "").trim();
+  const weight = Number(body.weight);
+  if (!Number.isInteger(requestedRevision) || requestedRevision < 0) throw new HttpError(400, "canvasRevision must be a non-negative integer");
+  if (!id) throw new HttpError(400, "id is required");
+  if (!["core", "support", "detail"].includes(role)) throw new HttpError(400, "role must be core, support or detail");
+  if (!Number.isFinite(weight) || weight < 1 || weight > 100) throw new HttpError(400, "weight must be 1-100");
+  const snapshot = getSnapshot();
+  if (requestedRevision !== snapshot.revision) throw new HttpError(409, "Canvas changed; refresh before saving semantics", { revision: snapshot.revision });
+  const current = snapshot.entities.find((item) => item.id === id);
+  if (!current) throw new HttpError(404, `Entity not found: ${id}`);
+  const { actor, updatedAt, ...payload } = current;
+  const event = createEvent("entity.upsert", { actor: "owner", payload: { ...payload, ownerRole: role, ownerWeight: weight } });
+  appendEvents([event], { expectedRevision: requestedRevision });
+  return { revision: requestedRevision + 1, id, role, weight };
+}
+
 function findSessionNode(body) {
   const workId = String(body.workId || "").trim();
   if (!workId) throw new HttpError(400, "workId is required");
@@ -347,6 +369,12 @@ const server = http.createServer(async (request, response) => {
       guardMutation(request);
       const result = saveRename(await readJson(request));
       sendJson(response, 201, { ok: true, ...result });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/semantics") {
+      guardMutation(request);
+      sendJson(response, 201, { ok: true, ...saveSemantics(await readJson(request)) });
       return;
     }
 

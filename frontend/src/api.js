@@ -39,6 +39,7 @@ export const canvasApi = {
   updateStatus: (force = false) => api(`/api/update/status?${force ? "refresh=1&" : ""}t=${Date.now()}`),
   saveLayout: (canvasRevision, items, layoutVersion) => api("/api/layout", { method: "POST", body: JSON.stringify({ canvasRevision, items, layoutVersion }) }),
   rename: (canvasRevision, kind, id, value) => api("/api/rename", { method: "POST", body: JSON.stringify({ canvasRevision, kind, id, value }) }),
+  saveSemantics: (canvasRevision, id, role, weight) => api("/api/semantics", { method: "POST", body: JSON.stringify({ canvasRevision, id, role, weight }) }),
   openWork: (canvasRevision, workId) => api("/api/sessions/open", { method: "POST", body: JSON.stringify({ canvasRevision, workId }) }),
   regenerate: () => api("/api/architect/refresh", { method: "POST", body: "{}" }),
   applyUpdate: () => api("/api/update/apply", { method: "POST", body: "{}" }),

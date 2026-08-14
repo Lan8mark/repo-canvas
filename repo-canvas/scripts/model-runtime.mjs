@@ -47,8 +47,8 @@ export async function runCodexStructured({
   cwd,
   prompt,
   outputSchema,
-  timeoutMs = role === "architect" ? 30 * 60_000 : 90_000,
-  profile = MODEL_PROFILES[role],
+  timeoutMs = role.startsWith("architect") ? 30 * 60_000 : 90_000,
+  profile = MODEL_PROFILES[role] || (role.startsWith("architect") ? MODEL_PROFILES.architect : undefined),
   sdkFactory,
 }) {
   if (!profile) throw new Error(`Unknown model role '${role}'`);

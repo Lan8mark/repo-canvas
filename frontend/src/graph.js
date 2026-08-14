@@ -3,7 +3,26 @@ import { MarkerType } from "@xyflow/react";
 
 const elk = new ELK();
 export const ENTITY_WIDTH = 304;
-export const LAYOUT_VERSION = "react-flow-elk-v4-fluid-cards";
+export const LAYOUT_VERSION = "react-flow-elk-v6-weighted-hierarchy";
+const ROLE_LEVEL = { core: 0, support: 1, detail: 2 };
+
+export function entityRole(entity) {
+  return entity?.ownerRole || entity?.role || "core";
+}
+
+export function entityWeight(entity) {
+  const value = Number(entity?.ownerWeight || entity?.weight);
+  return Number.isFinite(value) ? value : entityRole(entity) === "core" ? 80 : entityRole(entity) === "support" ? 50 : 20;
+}
+
+export function entityWidth(entity) {
+  const role = entityRole(entity);
+  const weight = Math.max(1, Math.min(100, entityWeight(entity)));
+  const weighted = Math.round(250 + weight * 1.35);
+  if (role === "core") return Math.max(344, Math.min(390, weighted));
+  if (role === "detail") return Math.max(256, Math.min(286, weighted));
+  return Math.max(286, Math.min(342, weighted));
+}
 
 const AREA_COLORS = ["#6f8fa6", "#a87969", "#7b9270", "#9a7aa8", "#b08b55", "#638f89"];
 
@@ -74,7 +93,7 @@ function wrappedLines(value, capacity) {
 
 export function entityContentHeight(entity) {
   const titleLines = wrappedLines(entityLabel(entity), 34);
-  const logicLines = wrappedLines(entity.problem, 43) + wrappedLines(entity.solution || entity.purpose, 43);
+  const logicLines = wrappedLines(entity.goal || entity.problem, 43) + wrappedLines(entity.solution || entity.purpose, 43);
   const technicalLines = wrappedLines(entity.mechanism || entity.note || entity.purpose, 56)
     + wrappedLines(entity.invariants?.[0], 44)
     + wrappedLines(entity.path, 62);
@@ -105,7 +124,7 @@ async function layoutArea(area, entities, relations) {
     },
     children: entities.map((entity) => ({
       id: entity.id,
-      width: ENTITY_WIDTH,
+      width: entityWidth(entity),
       height: entityHeight(entity, relations),
     })),
     edges: internal.map((relation) => ({ id: relation.id, sources: [relation.from], targets: [relation.to] })),
@@ -196,10 +215,12 @@ function aggregateAreaLinks(areaNodes, entities, relations) {
   });
 }
 
-export async function buildGraph(snapshot) {
+export async function buildGraph(snapshot, { level = "support" } = {}) {
   const areas = snapshot.areas || [];
-  const entities = snapshot.entities || [];
-  const relations = snapshot.relations || [];
+  const maximumRole = ROLE_LEVEL[level] ?? ROLE_LEVEL.support;
+  const entities = (snapshot.entities || []).filter((entity) => ROLE_LEVEL[entityRole(entity)] <= maximumRole);
+  const entityIds = new Set(entities.map((entity) => entity.id));
+  const relations = (snapshot.relations || []).filter((relation) => entityIds.has(relation.from) && entityIds.has(relation.to));
   const areaLayouts = new Map();
 
   await Promise.all(areas.map(async (area) => {
@@ -221,7 +242,7 @@ export async function buildGraph(snapshot) {
     const origin = areaPositions.get(area.id);
     for (const entity of members) {
       if (!hasCurrentLayout(entity) || !finite(entity.x) || !finite(entity.y)) continue;
-      width = Math.max(width, Number(entity.x) - origin.x + ENTITY_WIDTH + 44);
+      width = Math.max(width, Number(entity.x) - origin.x + entityWidth(entity) + 44);
       height = Math.max(height, Number(entity.y) - origin.y + entityHeight(entity, relations) + 44);
     }
     return {
@@ -251,12 +272,18 @@ export async function buildGraph(snapshot) {
       position,
       data: {
         entity,
+        role: entityRole(entity),
+        weight: entityWeight(entity),
         label: entityLabel(entity),
         areaLabel: areaTitle(areas.find((area) => area.id === entity.areaId)),
         areaColor: areaColor(entity.areaId),
         ...ports,
       },
-      style: { width: ENTITY_WIDTH, height: entityHeight(entity, relations) },
+      style: {
+        width: entityWidth(entity),
+        height: entityHeight(entity, relations),
+        "--entity-weight": entityWeight(entity),
+      },
       zIndex: 2,
     };
   });

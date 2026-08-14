@@ -16,7 +16,7 @@ Install this project-visualization tool in the current repository, build the ini
 The agent will follow [`INSTALL_WITH_AGENT.txt`](INSTALL_WITH_AGENT.txt). The exact commands are:
 
 ```text
-npx --yes --package=github:Lan8mark/repo-canvas#v0.10.1 repo-canvas bootstrap
+npx --yes --package=github:Lan8mark/repo-canvas#v0.11.0 repo-canvas bootstrap
 node .repo-canvas/repo-canvas.mjs start
 ```
 
@@ -25,7 +25,8 @@ The server opens the protected loopback URL in your default browser. Keep that f
 ## What you see
 
 - project areas that group related parts of the system;
-- problem-oriented blocks: what breaks without each block and what it changes;
+- goal-oriented blocks: what the product must achieve and which technical solution achieves it;
+- semantic hierarchy: Core product spine, supporting systems and implementation details;
 - a `Meaning / Technical` switch between newcomer logic and implementation evidence;
 - fluid semantic cards that wrap every title and body in full and grow with their content and ports;
 - two-layer relations: why a connection matters and the concrete runtime/data mechanism;
@@ -43,7 +44,7 @@ The data model has no fixed entity cap. One Canvas can hold a small project or a
 
 ## How it works
 
-`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect inspects the repository once and builds its semantic map. It treats the map as an explanation rather than a code inventory: every node must justify itself with a distinct problem and solution, then provide a compact mechanism, 1-3 technical invariants and an implementation anchor. Isolated cards and incomplete refresh overlays are rejected.
+`setup` checks the local Codex connection, then runs a read-only Architect with `gpt-5.6-sol` at medium reasoning. Architect first inventories public goals, pipelines, stores, models and runtimes; then builds the product spine; then audits the result independently. Every node maps a pragmatic goal to a real technical solution and cites implementation evidence. Deterministic coverage gates reject missing fundamental systems and broken main flows. Refresh omissions never delete existing concepts.
 
 When the Canvas server is running, Observer watches public local session journals for this repository. It creates a provisional card on the first observed turn event, then uses `gpt-5.4-mini` to classify small event deltas and attach the work to the map. On completion, Observer updates affected passports and relations when the session contains enough evidence.
 
@@ -75,12 +76,12 @@ From v0.8.6 onward, Canvas checks the public GitHub release feed in the backgrou
 
 ## Offline installation
 
-Download `repo-canvas-0.10.1-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.10.1.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
+Download `repo-canvas-0.11.0-kit.zip` from the [latest release](https://github.com/Lan8mark/repo-canvas/releases/latest). Copy `repo-canvas-0.11.0.tgz` and `INSTALL_WITH_AGENT.txt` into the target repository, then give the text file to a coding agent.
 
 Manual commands:
 
 ```text
-npx --yes --package=./repo-canvas-0.10.1.tgz repo-canvas bootstrap
+npx --yes --package=./repo-canvas-0.11.0.tgz repo-canvas bootstrap
 node .repo-canvas/repo-canvas.mjs start
 ```
 

@@ -106,6 +106,7 @@ export function validateEvent(event) {
     requireString(errors, payload.title, "payload.title", { max: 240 });
     optionalString(errors, payload.note, "payload.note", 2000);
     optionalString(errors, payload.problem, "payload.problem", 2000);
+    optionalString(errors, payload.goal, "payload.goal", 2000);
     optionalString(errors, payload.solution, "payload.solution", 2000);
     optionalString(errors, payload.ownerTitle, "payload.ownerTitle", 240);
     optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
@@ -124,14 +125,23 @@ export function validateEvent(event) {
     optionalString(errors, payload.purpose, "payload.purpose", 2000);
     optionalString(errors, payload.note, "payload.note", 2000);
     optionalString(errors, payload.problem, "payload.problem", 2000);
+    optionalString(errors, payload.goal, "payload.goal", 2000);
     optionalString(errors, payload.solution, "payload.solution", 2000);
     optionalString(errors, payload.mechanism, "payload.mechanism", 3000);
     optionalString(errors, payload.ownerLabel, "payload.ownerLabel", 240);
+    optionalString(errors, payload.role, "payload.role", 16);
+    optionalString(errors, payload.ownerRole, "payload.ownerRole", 16);
+    optionalString(errors, payload.parentId, "payload.parentId", 128);
+    if (payload.role !== undefined && !new Set(["core", "support", "detail"]).has(payload.role)) errors.push(`payload.role has unsupported value '${String(payload.role)}'`);
+    if (payload.ownerRole !== undefined && !new Set(["core", "support", "detail"]).has(payload.ownerRole)) errors.push(`payload.ownerRole has unsupported value '${String(payload.ownerRole)}'`);
+    for (const field of ["weight", "ownerWeight"]) if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`, { min: 1 });
     optionalString(errors, payload.layoutVersion, "payload.layoutVersion", 64);
     optionalStringList(errors, payload.inputs, "payload.inputs");
     optionalStringList(errors, payload.outputs, "payload.outputs");
     optionalStringList(errors, payload.dependsOn, "payload.dependsOn");
     optionalStringList(errors, payload.invariants, "payload.invariants");
+    optionalStringList(errors, payload.evidence, "payload.evidence");
+    optionalStringList(errors, payload.covers, "payload.covers");
     for (const field of ["x", "y", "order"]) if (payload[field] !== undefined) requireFiniteNumber(errors, payload[field], `payload.${field}`);
   } else if (event.type === "entity.remove") {
     requireString(errors, payload.id, "payload.id", { max: 128, id: true });

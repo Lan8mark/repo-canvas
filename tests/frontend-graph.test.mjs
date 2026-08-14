@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { focusColumnOffset, orthogonalRelationPath, relationLabelWidth } from "../frontend/src/edge-routing.js";
-import { LAYOUT_VERSION, buildGraph, entityContentHeight } from "../frontend/src/graph.js";
+import { LAYOUT_VERSION, buildGraph, entityContentHeight, entityWidth } from "../frontend/src/graph.js";
 
 function snapshot(overrides = {}) {
   return {
@@ -87,4 +87,10 @@ test("entity cards grow with complete narrative copy", () => {
 
   assert.equal(short, 206);
   assert.ok(long > short + 150);
+});
+
+test("card footprint follows product importance inside the hierarchy", () => {
+  assert.ok(entityWidth({ role: "core", weight: 96 }) > entityWidth({ role: "core", weight: 72 }));
+  assert.ok(entityWidth({ role: "core", weight: 72 }) > entityWidth({ role: "support", weight: 60 }));
+  assert.ok(entityWidth({ role: "support", weight: 60 }) > entityWidth({ role: "detail", weight: 25 }));
 });

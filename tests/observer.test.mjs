@@ -176,10 +176,11 @@ test("architect rejects relations to entities removed by the same refresh", () =
     areas: [], entities: [],
     relations: [{ id: "bad", from: "legacy", to: "legacy", label: "self", status: "existing" }],
     removedAreaIds: [], removedEntityIds: ["legacy"], removedRelationIds: [],
+    removals: [{ kind: "entity", id: "legacy", replacementId: "", evidence: ["src/legacy removed"], reason: "Implementation was removed from production code." }],
   }), /Unknown relation endpoint/);
 });
 
-test("complete architect refresh removes concepts omitted from its response", () => {
+test("architect refresh preserves concepts omitted from its response", () => {
   emit("area.upsert", { id: "stale-area", title: "Stale", note: "", order: 9 });
   emit("entity.upsert", {
     id: "stale-entity", areaId: "stale-area", label: "Stale", status: "operational",
@@ -209,12 +210,12 @@ test("complete architect refresh removes concepts omitted from its response", ()
       id: "consumer-uses-source", from: "consumer", to: "source",
       label: "берёт единое правило", technical: "Dispatcher resolves operation id through Registry", status: "existing",
     }],
-    removedAreaIds: [], removedEntityIds: [], removedRelationIds: [],
+    removedAreaIds: [], removedEntityIds: [], removedRelationIds: [], removals: [],
   };
 
   const events = semantic.architectureEvents(value, { refresh: true });
-  assert.ok(events.some((event) => event.type === "entity.remove" && event.payload.id === "stale-entity"));
-  assert.ok(events.some((event) => event.type === "area.remove" && event.payload.id === "stale-area"));
+  assert.ok(!events.some((event) => event.type === "entity.remove" && event.payload.id === "stale-entity"));
+  assert.ok(!events.some((event) => event.type === "area.remove" && event.payload.id === "stale-area"));
 });
 
 test("completed observer work may remain provisional when no semantic target was established", () => {

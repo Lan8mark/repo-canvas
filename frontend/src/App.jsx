@@ -10,7 +10,7 @@ import {
 } from "@xyflow/react";
 import { canvasApi, reloadToken } from "./api.js";
 import { focusColumnOffset } from "./edge-routing.js";
-import { LAYOUT_VERSION, activeWork, areaTitle, buildGraph, entityLabel, neighborSet } from "./graph.js";
+import { LAYOUT_VERSION, activeWork, areaTitle, buildGraph, entityLabel, entityRole, entityWeight, neighborSet } from "./graph.js";
 import { edgeTypes, nodeTypes } from "./graph-elements.jsx";
 
 function relativeTime(value) {
@@ -38,10 +38,12 @@ export default function App() {
   const [selectedBridge, setSelectedBridge] = useState(null);
   const [direction, setDirection] = useState("all");
   const [informationLayer, setInformationLayer] = useState("logic");
+  const [overviewLevel, setOverviewLevel] = useState("support");
   const [online, setOnline] = useState(true);
   const [message, setMessage] = useState(null);
   const [rename, setRename] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [architectStage, setArchitectStage] = useState(null);
   const [update, setUpdate] = useState(null);
   const [layoutUnlocked, setLayoutUnlocked] = useState(false);
   const [initialFit, setInitialFit] = useState(false);
@@ -87,7 +89,7 @@ export default function App() {
   useEffect(() => {
     if (!snapshot) return;
     let cancelled = false;
-    buildGraph(snapshot).then((graph) => {
+    buildGraph(snapshot, { level: overviewLevel }).then((graph) => {
       if (cancelled) return;
       setNodes(graph.nodes);
       setEdges(graph.edges);
@@ -97,7 +99,7 @@ export default function App() {
       }
     }).catch((error) => notify(`Не удалось построить карту: ${error.message}`, true));
     return () => { cancelled = true; };
-  }, [snapshot, setNodes, setEdges, initialFit, fitView, notify]);
+  }, [snapshot, overviewLevel, setNodes, setEdges, initialFit, fitView, notify]);
 
   useEffect(() => {
     const key = (event) => {
@@ -348,6 +350,16 @@ export default function App() {
     finally { busyRef.current = false; }
   }
 
+  async function saveEntitySemantics(role) {
+    if (!selectedEntity || !snapshotRef.current) return;
+    const weight = role === "core" ? Math.max(70, entityWeight(selectedEntity)) : role === "support" ? 50 : 20;
+    try {
+      await canvasApi.saveSemantics(snapshotRef.current.revision, selectedEntity.id, role, weight);
+      notify(`Уровень блока: ${role}`);
+      await refresh(true);
+    } catch (error) { notify(error.message, true); }
+  }
+
   async function regenerate() {
     if (!window.confirm("Повторно прочитать репозиторий и обновить смысловую карту?")) return;
     try {
@@ -361,8 +373,9 @@ export default function App() {
     const timer = window.setInterval(async () => {
       try {
         const status = await canvasApi.architectStatus();
+        setArchitectStage(status.stage || null);
         if (!status.running && status.status !== "running") {
-          setRegenerating(false); window.clearInterval(timer);
+          setRegenerating(false); setArchitectStage(null); window.clearInterval(timer);
           notify(status.status === "done" ? "Карта обновлена" : `Architect: ${status.error || "ошибка"}`, status.status !== "done");
           refresh(true);
         }
@@ -373,10 +386,11 @@ export default function App() {
 
   useEffect(() => { canvasApi.updateStatus(true).then(setUpdate).catch(() => {}); }, []);
 
+  const visibleRoleLevel = { core: 0, support: 1, detail: 2 }[overviewLevel];
   const groupedAreas = useMemo(() => (snapshot?.areas || []).map((area) => ({
     area,
-    entities: snapshot.entities.filter((entity) => entity.areaId === area.id),
-  })), [snapshot]);
+    entities: snapshot.entities.filter((entity) => entity.areaId === area.id && ({ core: 0, support: 1, detail: 2 }[entityRole(entity)] <= visibleRoleLevel)),
+  })), [snapshot, visibleRoleLevel]);
 
   if (!snapshot) return <div className="loading-screen"><span className="brand-mark"><i /><i /><i /></span><strong>Repo Canvas</strong><small>{online ? "строим пространство проекта…" : "нет связи с локальным Canvas"}</small></div>;
 
@@ -406,8 +420,13 @@ export default function App() {
                 <button type="button" className={informationLayer === "logic" ? "is-active" : ""} onClick={() => setInformationLayer("logic")}>Смысл</button>
                 <button type="button" className={informationLayer === "technical" ? "is-active" : ""} onClick={() => setInformationLayer("technical")}>Техника</button>
               </div>
+              <div className="layer-switch hierarchy-switch" aria-label="Глубина карты">
+                <button type="button" className={overviewLevel === "core" ? "is-active" : ""} onClick={() => setOverviewLevel("core")}>Основа</button>
+                <button type="button" className={overviewLevel === "support" ? "is-active" : ""} onClick={() => setOverviewLevel("support")}>Поддержка</button>
+                <button type="button" className={overviewLevel === "detail" ? "is-active" : ""} onClick={() => setOverviewLevel("detail")}>Всё</button>
+              </div>
               <button type="button" title="Обновить данные" onClick={() => refresh(true)}><Icon>↻</Icon></button>
-              <button type="button" className="regenerate" disabled={regenerating} onClick={regenerate}>{regenerating ? "Карта перестраивается…" : "Повторная генерация"}</button>
+              <button type="button" className="regenerate" disabled={regenerating} onClick={regenerate}>{regenerating ? ({ inventory: "Собирает факты…", map: "Строит основу…", audit: "Проверяет карту…", repair: "Чинит пробелы…", apply: "Применяет…" }[architectStage] || "Карта перестраивается…") : "Повторная генерация"}</button>
               <button
                 type="button"
                 className={`layout-lock ${layoutUnlocked ? "is-unlocked" : ""}`}
@@ -458,8 +477,9 @@ export default function App() {
           {selectedEntity ? <>
             <header><span><small>{areaTitle(selectedArea)}</small><strong>{entityLabel(selectedEntity)}</strong></span><button onClick={() => setSelectedId(null)}>×</button></header>
             <div className="inspector-status"><span className={`status-${selectedEntity.status}`}>{selectedEntity.status}</span>{currentWork.length ? <span className="live">в работе</span> : null}</div>
+            <section className="semantic-role"><h3>ВЕС НА КАРТЕ</h3><div>{[["core", "Основа"], ["support", "Поддержка"], ["detail", "Деталь"]].map(([role, label]) => <button key={role} className={entityRole(selectedEntity) === role ? "is-active" : ""} onClick={() => saveEntitySemantics(role)}>{label}</button>)}</div></section>
             {informationLayer === "logic" ? <>
-              <section className="inspector-narrative problem"><h3>Проблема</h3><p>{selectedEntity.problem || "Проблема пока не сформулирована."}</p></section>
+              <section className="inspector-narrative problem"><h3>Цель</h3><p>{selectedEntity.goal || selectedEntity.problem || "Цель пока не сформулирована."}</p></section>
               <section className="inspector-narrative solution"><h3>Решение</h3><p>{selectedEntity.solution || selectedEntity.purpose || "Решение пока не сформулировано."}</p></section>
             </> : <>
               <p className="inspector-purpose">{selectedEntity.mechanism || selectedEntity.note || selectedEntity.purpose || "Технический механизм пока не описан."}</p>
